@@ -14,7 +14,7 @@ class ExtractFlightDates:
         self.driver = webdriver.Chrome(options=options)
 
     @staticmethod
-    def is_valid_date(self, date_str):
+    def is_valid_date(date_str):
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
             return True
@@ -80,3 +80,4 @@ if __name__ == "__main__":
                 pass
 
     extraction.close()
+
