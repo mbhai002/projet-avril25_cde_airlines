@@ -1,0 +1,48 @@
+# Environnements virtuels Python
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Fichiers Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Données locales
+data/metar/*.xml
+data/taf/*.xml
+*.log
+
+# MongoDB dumps
+*.bson
+dumps/
