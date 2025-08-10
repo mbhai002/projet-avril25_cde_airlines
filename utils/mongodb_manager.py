@@ -1,12 +1,17 @@
 import json
 import logging
+import sys
+import os
 from typing import List, Dict, Any, Optional
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, BulkWriteError
-import os
 from datetime import datetime
+
+# Ajouter le chemin parent pour les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.simple_logger import get_logger
 
 class MongoDBManager:
     """
@@ -27,22 +32,9 @@ class MongoDBManager:
         self.database_name = database_name
         self.client: Optional[MongoClient] = None
         self.database: Optional[Database] = None
-        self.logger = self._setup_logger()
+        self.logger = get_logger(__name__)
         
-    def _setup_logger(self) -> logging.Logger:
-        """Configure le logger pour la classe."""
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-        
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            
-        return logger
+
     
     def connect(self) -> bool:
         """
@@ -775,92 +767,34 @@ if __name__ == "__main__":
     MONGODB_URI = "mongodb://localhost:27017/"
     DATABASE_NAME = "dst_airlines"
     
+    # Initialiser le logger
+    logger = get_logger(__name__)
+    
     # Initialiser le gestionnaire MongoDB
     mongo_manager = MongoDBManager(MONGODB_URI, DATABASE_NAME)
     
     try:
         # Se connecter à MongoDB
         if mongo_manager.connect():
-            print("=== INTÉGRATION DES FICHIERS COMBINED ===")
+            logger.info("=== INTÉGRATION DES FICHIERS COMBINED ===")
             
             # Insérer tous les fichiers combined* du dossier output
             results = mongo_manager.insert_all_combined_files()
             
             # Afficher les résultats
-            print(f"\nRésultats de l'intégration:")
+            logger.info(f"\nRésultats de l'intégration:")
             for filename, result in results.items():
                 if result["success"]:
-                    print(f"✓ {filename}")
-                    print(f"  Collection: {result['collection']}")
-                    print(f"  Documents: {result['documents_inserted']}/{result['documents_total']}")
-                    print(f"  Type: {result['flight_type']} | Date: {result['flight_date']}")
+                    logger.info(f"✓ {filename}")
+                    logger.info(f"  Collection: {result['collection']}")
+                    logger.info(f"  Documents: {result['documents_inserted']}/{result['documents_total']}")
+                    logger.info(f"  Type: {result['flight_type']} | Date: {result['flight_date']}")
                 else:
-                    print(f"✗ {filename}")
-                    print(f"  Erreur: {result.get('error', 'Erreur inconnue')}")
-                print()
-            
-            # Exemple d'insertion d'un fichier spécifique (optionnel)
-            # json_file = "output/combined_departure_2025-07-31.json"
-            # collection_name = "flights5"
-            
-            # success = mongo_manager.insert_json_to_collection(json_file, collection_name)
-            
-            # if success:
-            #     # Créer des index pour optimiser les performances
-            #     mongo_manager.create_index(collection_name, ["flight_number", "arrival.date"])
-            #     mongo_manager.create_index(collection_name, ["arrival.scheduled_utc"])
-            #     mongo_manager.create_index(collection_name, ["departure.scheduled_utc"])
-                
-            #     # Afficher les statistiques
-            #     stats = mongo_manager.get_collection_stats(collection_name)
-            #     if stats:
-            #         print(f"Collection '{collection_name}': {stats['count']} documents")
-                
-                # Exemple de requête par créneau horaire
-                # print("\n--- Exemple de requête par créneau horaire ---")
-                # flights = mongo_manager.query_flights_by_arrival_time(
-                #     collection_name=collection_name,
-                #     start_time_utc="2025-07-20T18:00:00.000Z",
-                #     end_time_utc="2025-07-20T18:15:00.000Z"
-                # )
-                
-                # if flights:
-                #     print(f"Vols trouvés dans le créneau: {len(flights)}")
-                #     for flight in flights[:3]:  # Afficher les 3 premiers
-                #         print(f"- Vol {flight.get('flight_number', 'N/A')} "
-                #               f"de {flight.get('from_code', 'N/A')} "
-                #               f"arrivée prévue: {flight.get('arrival', {}).get('scheduled_utc', 'N/A')}")
-                
-                # # Exemple de requête pour obtenir les aéroports d'origine
-                # print("\n--- Exemple de requête pour aéroports d'origine ---")
-                # origin_airports = mongo_manager.query_flights_by_arrival_time(
-                #     collection_name=collection_name,
-                #     start_time_utc="2025-07-20T18:00:00.000Z",
-                #     end_time_utc="2025-07-20T18:15:00.000Z",
-                #     return_airports=True
-                # )
-                
-                # if origin_airports:
-                #     print(f"Aéroports d'origine trouvés: {len(origin_airports)}")
-                #     for airport in origin_airports[:5]:  # Afficher les 5 premiers
-                #         print(f"- {airport['airport_code']}: {airport['flight_count']} vols")
-                
-                # # Exemple de requête pour obtenir les aéroports de destination
-                # print("\n--- Exemple de requête pour aéroports de destination ---")
-                # dest_airports = mongo_manager.query_flights_by_departure_time(
-                #     collection_name=collection_name,
-                #     start_time_utc="2025-07-20T18:00:00.000Z",
-                #     end_time_utc="2025-07-20T18:15:00.000Z",
-                #     return_airports=True
-                # )
-                
-                # if dest_airports:
-                #     print(f"Aéroports de destination trouvés: {len(dest_airports)}")
-                #     for airport in dest_airports[:5]:  # Afficher les 5 premiers
-                #         print(f"- {airport['airport_code']}: {airport['flight_count']} vols")
-                    
+                    logger.error(f"✗ {filename}")
+                    logger.error(f"  Erreur: {result.get('error', 'Erreur inconnue')}")
+                logger.info("")     
         else:
-            print("Erreur de connexion à MongoDB")
+            logger.error("Erreur de connexion à MongoDB")
             
     finally:
         mongo_manager.disconnect()

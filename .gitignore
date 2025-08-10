@@ -42,6 +42,8 @@ Thumbs.db
 data/metar/*.xml
 data/taf/*.xml
 *.log
+logs/
+*.jsonl
 
 # MongoDB dumps
 *.bson

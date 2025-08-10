@@ -1,6 +1,11 @@
 import csv
 import os
+import sys
 from typing import Dict, Optional
+
+# Ajouter le chemin parent pour les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.simple_logger import get_logger
 
 
 class AirportTimezoneProvider:
@@ -24,6 +29,7 @@ class AirportTimezoneProvider:
         
         self.csv_file_path = csv_file_path
         self.airport_info: Dict[str, Dict] = {}
+        self.logger = get_logger(__name__)
         
         self._load_data()
     
@@ -46,14 +52,14 @@ class AirportTimezoneProvider:
                         'time_zone': timezone
                     }
             
-            print(f"[LOG] AirportTimezoneProvider initialisé avec {len(self.airport_info)} aéroports")
+            self.logger.info(f"AirportTimezoneProvider initialisé avec {len(self.airport_info)} aéroports")
             
         except FileNotFoundError:
-            print(f"[ERREUR] Fichier CSV non trouvé: {self.csv_file_path}")
+            self.logger.error(f"Fichier CSV non trouvé: {self.csv_file_path}")
             # Fallback avec quelques timezones de base
             self._load_fallback_data()
         except Exception as e:
-            print(f"[ERREUR] Erreur lors du chargement du CSV: {e}")
+            self.logger.error(f"Erreur lors du chargement du CSV: {e}")
             self._load_fallback_data()
     
     def _load_fallback_data(self):
@@ -70,7 +76,7 @@ class AirportTimezoneProvider:
             'FRA': {'time_zone': 'Europe/Berlin'},
             'AMS': {'time_zone': 'Europe/Amsterdam'},
         }
-        print(f"[LOG] Utilisation des données de fallback avec {len(self.airport_info)} aéroports")
+        self.logger.info(f"Utilisation des données de fallback avec {len(self.airport_info)} aéroports")
     
     def get_airport_info(self, iata_code: str) -> Optional[Dict]:
         """

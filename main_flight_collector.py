@@ -5,9 +5,9 @@ Script principal pour récupérer les vols de la prochaine heure et les intégre
 
 import sys
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
-import logging
+import time
 
 # Ajouter le répertoire du projet au path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +15,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from data.flight_data_scrapper import FlightDataScraper
 from data.metar_xml_collector import MetarXmlCollector
 from data.taf_xml_collector import TafXmlCollector
-from data.utils.mongodb_manager import MongoDBManager
+from utils.mongodb_manager import MongoDBManager
+from config.simple_logger import get_logger, log_operation_time, log_database_operation
 
 
 class FlightCollectorMain:
@@ -54,23 +55,10 @@ class FlightCollectorMain:
             self.metar_xml_collector = None
             self.taf_xml_collector = None
         
-        # Configuration du logging
-        self.logger = self._setup_logger()
+        # Configuration du logging simplifié
+        self.logger = get_logger(__name__)
         
-    def _setup_logger(self) -> logging.Logger:
-        """Configure le logger pour la classe"""
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-        
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s'
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            
-        return logger
+        self.logger.info(f"FlightCollectorMain initialized - Database: {database_name}, Collection: {collection_name}, Weather: {enable_xml_weather}")
     
     def collect_and_store_next_hour_flights(self, 
                                           num_airports: int = 50,
@@ -90,20 +78,20 @@ class FlightCollectorMain:
         Returns:
             Dictionnaire avec les statistiques de l'opération
         """
-        start_time = datetime.now()
+        operation_start_time = datetime.now()
         
         # Générer un ID unique pour cette session de collecte
-        collection_session_id = f"session_{start_time.strftime('%Y%m%d_%H%M%S')}_{start_time.microsecond // 1000:03d}"
+        collection_session_id = f"session_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
         
         self.logger.info(f"=== DÉBUT DE LA COLLECTE ===")
         self.logger.info(f"Session ID: {collection_session_id}")
-        self.logger.info(f"Heure de début: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"Heure de début: {operation_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         self.logger.info(f"Paramètres: {num_airports} aéroports, offset {hour_offset}h")
         
         results = {
             'success': False,
             'collection_session_id': collection_session_id,
-            'start_time': start_time.isoformat(),
+            'start_time': operation_start_time.isoformat(),
             'end_time': None,
             'duration_seconds': 0,
             'flights_collected': 0,
@@ -118,25 +106,27 @@ class FlightCollectorMain:
         
         try:
             # Étape 1: Connexion à MongoDB
-            self.logger.info("Connexion à MongoDB...")
+            self.logger.info("Connecting to MongoDB...")
             if not self.mongo_manager.connect():
-                error_msg = "Impossible de se connecter à MongoDB"
+                error_msg = "Failed to connect to MongoDB"
                 self.logger.error(error_msg)
                 results['errors'].append(error_msg)
                 return results
                 
             results['mongodb_connected'] = True
-            self.logger.info("✓ Connexion MongoDB réussie")
+            self.logger.info("✓ MongoDB connection successful")
             
             # Étape 2: Collecte METAR/TAF XML (en premier)
             if self.enable_xml_weather:
-                self.logger.info("Collecte des données météorologiques XML (METAR/TAF)...")
+                self.logger.info("Starting XML weather data collection (METAR/TAF)...")
                 
                 # Collecte METAR XML
                 if self.metar_xml_collector:
                     try:
-                        self.logger.info("Collecte METAR XML en cours...")
+                        metar_start_time = time.time()
+                        self.logger.info("Collecting METAR XML data...")
                         metar_xml_documents = self.metar_xml_collector.fetch_metar_data()
+                        duration_ms = (time.time() - metar_start_time) * 1000
                         
                         if metar_xml_documents:
                             # Ajouter l'ID de session à chaque document METAR
@@ -153,20 +143,30 @@ class FlightCollectorMain:
                             results['metar_xml_collected'] = len(metar_xml_documents)
                             results['metar_xml_inserted'] = metar_xml_inserted
                             
-                            self.logger.info(f"✓ {metar_xml_inserted} documents METAR XML insérés")
+                            log_database_operation(
+                                self.logger,
+                                "insert",
+                                "weather_metar_xml",
+                                metar_xml_inserted,
+                                duration_ms
+                            )
+                            
+                            self.logger.info(f"✓ {metar_xml_inserted} METAR XML documents inserted ({duration_ms:.1f}ms)")
                         else:
-                            self.logger.warning("Aucune donnée METAR XML collectée")
+                            self.logger.warning("No METAR XML data collected")
                             
                     except Exception as e:
-                        error_msg = f"Erreur lors de la collecte METAR XML: {e}"
-                        self.logger.warning(error_msg)
+                        error_msg = f"Error during METAR XML collection: {e}"
+                        self.logger.error(error_msg, exc_info=True)
                         results['errors'].append(error_msg)
                 
                 # Collecte TAF XML
                 if self.taf_xml_collector:
                     try:
-                        self.logger.info("Collecte TAF XML en cours...")
+                        taf_start_time = time.time()
+                        self.logger.info("Collecting TAF XML data...")
                         taf_xml_documents = self.taf_xml_collector.fetch_taf_data()
+                        duration_ms = (time.time() - taf_start_time) * 1000
                         
                         if taf_xml_documents:
                             # Ajouter l'ID de session à chaque document TAF
@@ -183,17 +183,27 @@ class FlightCollectorMain:
                             results['taf_xml_collected'] = len(taf_xml_documents)
                             results['taf_xml_inserted'] = taf_xml_inserted
                             
-                            self.logger.info(f"✓ {taf_xml_inserted} documents TAF XML insérés")
+                            log_database_operation(
+                                self.logger,
+                                "insert",
+                                "weather_taf_xml",
+                                taf_xml_inserted,
+                                duration_ms
+                            )
+                            
+                            self.logger.info(f"✓ {taf_xml_inserted} TAF XML documents inserted ({duration_ms:.1f}ms)")
                         else:
-                            self.logger.warning("Aucune donnée TAF XML collectée")
+                            self.logger.warning("No TAF XML data collected")
                             
                     except Exception as e:
-                        error_msg = f"Erreur lors de la collecte TAF XML: {e}"
-                        self.logger.warning(error_msg)
+                        error_msg = f"Error during TAF XML collection: {e}"
+                        self.logger.error(error_msg, exc_info=True)
                         results['errors'].append(error_msg)
             
             # Étape 3: Collecte des vols
-            self.logger.info(f"Collecte des vols pour les {num_airports} premiers aéroports...")
+            flight_collection_start_time = time.time()
+            self.logger.info(f"Starting flight collection for top {num_airports} airports...")
+            
             flights = self.scraper.fetch_next_hour_departures_top_airports(
                 num_airports=num_airports,
                 delay=delay,
@@ -201,41 +211,58 @@ class FlightCollectorMain:
                 auto_save=False  # Pas de sauvegarde JSON, on va directement en MongoDB
             )
             
+            collection_duration_ms = (time.time() - flight_collection_start_time) * 1000
             results['flights_collected'] = len(flights)
-            self.logger.info(f"✓ {len(flights)} vols collectés")
+            
+            log_operation_time(self.logger, "flight_collection", flight_collection_start_time)
+            
+            self.logger.info(f"✓ {len(flights)} flights collected ({collection_duration_ms:.1f}ms)")
             
             if not flights:
-                self.logger.warning("Aucun vol collecté, mais les données météorologiques ont été collectées")
+                self.logger.warning("No flights collected, but weather data was collected")
                 results['success'] = True  # Succès car les données météo ont été collectées
                 return results
             
             # Étape 4: Préparation des données pour MongoDB
-            self.logger.info("Préparation des données pour MongoDB...")
+            self.logger.info("Preparing flight data for MongoDB insertion...")
             prepared_flights = self._prepare_flights_for_mongodb(flights, collection_session_id)
             
             # Étape 5: Insertion dans MongoDB
-            self.logger.info(f"Insertion de {len(prepared_flights)} vols dans MongoDB...")
+            insertion_start_time = time.time()
+            self.logger.info(f"Inserting {len(prepared_flights)} flights into MongoDB...")
+            
             insertion_success = self._insert_flights_to_mongodb(
                 prepared_flights, 
                 batch_size
             )
             
+            insertion_duration_ms = (time.time() - insertion_start_time) * 1000
+            
             if insertion_success:
                 results['flights_inserted'] = len(prepared_flights)
-                self.logger.info(f"✓ {len(prepared_flights)} vols insérés avec succès")
+                
+                log_database_operation(
+                    self.logger,
+                    "insert",
+                    self.collection_name,
+                    len(prepared_flights),
+                    insertion_duration_ms
+                )
+                
+                self.logger.info(f"✓ {len(prepared_flights)} flights inserted successfully ({insertion_duration_ms:.1f}ms)")
                 results['success'] = True
             else:
-                error_msg = "Erreur lors de l'insertion des vols dans MongoDB"
+                error_msg = "Error during flight insertion into MongoDB"
                 self.logger.error(error_msg)
                 results['errors'].append(error_msg)
                 # Même en cas d'erreur pour les vols, on peut considérer un succès partiel si les données météo sont collectées
                 if results['metar_xml_collected'] > 0 or results['taf_xml_collected'] > 0:
                     results['success'] = True
-                    self.logger.info("Succès partiel: données météorologiques collectées malgré l'erreur sur les vols")
+                    self.logger.info("Partial success: weather data collected despite flight insertion error")
                 
         except Exception as e:
-            error_msg = f"Erreur inattendue: {e}"
-            self.logger.error(error_msg)
+            error_msg = f"Unexpected error during collection: {e}"
+            self.logger.error(error_msg, exc_info=True)
             results['errors'].append(error_msg)
             
         finally:
@@ -245,18 +272,17 @@ class FlightCollectorMain:
             # Statistiques finales
             end_time = datetime.now()
             results['end_time'] = end_time.isoformat()
-            results['duration_seconds'] = (end_time - start_time).total_seconds()
+            results['duration_seconds'] = (end_time - operation_start_time).total_seconds()
             
-            self.logger.info(f"=== FIN DE LA COLLECTE ===")
-            self.logger.info(f"Durée totale: {results['duration_seconds']:.1f} secondes")
-            self.logger.info(f"Vols collectés: {results['flights_collected']}")
-            self.logger.info(f"Vols insérés: {results['flights_inserted']}")
-            if self.enable_xml_weather:
-                self.logger.info(f"METAR XML collectés: {results['metar_xml_collected']}")
-                self.logger.info(f"METAR XML insérés: {results['metar_xml_inserted']}")
-                self.logger.info(f"TAF XML collectés: {results['taf_xml_collected']}")
-                self.logger.info(f"TAF XML insérés: {results['taf_xml_inserted']}")
-            self.logger.info(f"Succès: {'✓' if results['success'] else '✗'}")
+            # Log final avec toutes les statistiques
+            self.logger.info("=== COLLECTION COMPLETED ===")
+            self.logger.info(f"Session: {collection_session_id}, Success: {results['success']}, Duration: {results['duration_seconds']:.1f}s")
+            self.logger.info(f"Flights: {results['flights_collected']}/{results['flights_inserted']}, METAR: {results['metar_xml_collected']}/{results['metar_xml_inserted']}, TAF: {results['taf_xml_collected']}/{results['taf_xml_inserted']}")
+            
+            if results['errors']:
+                self.logger.warning(f"Collection completed with {len(results['errors'])} errors")
+                for error in results['errors'][:3]:  # Log only first 3 errors
+                    self.logger.warning(f"Error: {error}")
             
         return results
     
@@ -548,7 +574,7 @@ def main():
         'mongodb_uri': "mongodb://localhost:27017/",
         'database_name': "dst_airlines2",
         'collection_name': "flights_realtime",
-        'num_airports': 10,  # Nombre d'aéroports à traiter
+        'num_airports': 200,  # Nombre d'aéroports à traiter
         'delay': 1.5,        # Délai entre requêtes
         'hour_offset': 1,    # Prochaine heure
         'batch_size': 500,   # Taille des lots MongoDB
@@ -591,6 +617,57 @@ def main():
     return results['success']
 
 
+def run_loop():
+    """Exécute en boucle toutes les heures à XX:05"""
+    print("=== MODE BOUCLE - Exécution toutes les heures à XX:05 ===")
+    print("Appuyez sur Ctrl+C pour arrêter\n")
+    
+    try:
+        while True:
+            # Calculer la prochaine exécution à XX:05
+            now = datetime.now()
+            next_run = now.replace(minute=5, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(hours=1)
+            
+            wait_seconds = (next_run - datetime.now()).total_seconds()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Prochaine exécution prévue à {next_run.strftime('%H:%M:%S')}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
+            time.sleep(wait_seconds)
+            
+            # Exécuter la collecte
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte...")
+            start_time = datetime.now()
+            success = main()
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            if success:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Collecte terminée avec succès ({duration:.1f}s)")
+            else:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ✗ Collecte terminée avec des erreurs ({duration:.1f}s)")
+            
+            print("=" * 60 + "\n")
+            
+    except KeyboardInterrupt:
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
+        print("Collecteur arrêté.")
+
+
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Collecteur de vols")
+    parser.add_argument(
+        '--loop', 
+        action='store_true',
+        help="Exécuter en boucle toutes les heures"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.loop:
+        run_loop()
+    else:
+        success = main()
+        exit(0 if success else 1)

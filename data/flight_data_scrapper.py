@@ -10,7 +10,8 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 import pandas as pd
 import pytz
-from data.utils.flight_html_parser import ParserHtml
+from utils.flight_html_parser import ParserHtml
+from config.simple_logger import get_logger
 
 
 class FlightDataScraper:
@@ -25,7 +26,8 @@ class FlightDataScraper:
         Args:
             lang: Langue pour les requêtes (défaut: "en")
         """
-        print(f"[LOG] Initialisation du scraper (langue: {lang})")
+        self.logger = get_logger(__name__)
+        self.logger.info(f"Initialisation du scraper (langue: {lang})")
         self.base_url = "https://data.airportinfo.live/airportic.php"
         self.lang = lang
         self.headers = {
@@ -49,7 +51,7 @@ class FlightDataScraper:
             return False
             
         wait_time = (2 ** attempt) * 5  # Backoff exponentiel: 5s, 10s, 20s
-        print(f"[WARNING] Rate limit atteint. Attente de {wait_time}s (tentative {attempt + 1}/{max_retries})")
+        self.logger.warning(f"Rate limit atteint. Attente de {wait_time}s (tentative {attempt + 1}/{max_retries})")
         time.sleep(wait_time)
         return True
 
@@ -68,7 +70,7 @@ class FlightDataScraper:
         Returns:
             Liste des vols trouvés, liste vide en cas d'erreur
         """
-        print(f"[LOG] Requête {dep_arr} pour {iata_airport} - shift {shift}...")
+        self.logger.info(f"Requête {dep_arr} pour {iata_airport} - shift {shift}...")
         
         payload = {
             "lang": self.lang,
@@ -90,7 +92,7 @@ class FlightDataScraper:
                     continue
                 
                 response.raise_for_status()
-                print(f"[LOG] ✓ Succès requête {iata_airport} shift {shift} ({dep_arr})")
+                self.logger.info(f"✓ Succès requête {iata_airport} shift {shift} ({dep_arr})")
                 
                 flights = self.parser.parse_flights_html(
                     response.text, 
@@ -107,19 +109,19 @@ class FlightDataScraper:
                         break
                     continue
                 else:
-                    print(f"[ERREUR] HTTP {response.status_code} pour {iata_airport} shift {shift}: {e}")
+                    self.logger.error(f"HTTP {response.status_code} pour {iata_airport} shift {shift}: {e}")
                     
             except requests.exceptions.RequestException as e:
-                print(f"[ERREUR] Requête pour {iata_airport} shift {shift}: {e}")
+                self.logger.error(f"Requête pour {iata_airport} shift {shift}: {e}")
                 
             except Exception as e:
-                print(f"[ERREUR] Inattendue pour {iata_airport} shift {shift}: {e}")
+                self.logger.error(f"Inattendue pour {iata_airport} shift {shift}: {e}")
             
             # Attendre avant de réessayer (sauf pour la dernière tentative)
             if attempt < max_retries - 1:
                 time.sleep(2)
         
-        print(f"[ERREUR] Échec après {max_retries} tentatives pour {iata_airport} shift {shift}")
+        self.logger.error(f"Échec après {max_retries} tentatives pour {iata_airport} shift {shift}")
         return []
 
     def save_to_json(self, data: List[Dict], filename: str, output_folder: str = "output") -> bool:
@@ -150,11 +152,11 @@ class FlightDataScraper:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             
-            print(f"[LOG] ✓ Données sauvegardées dans {filepath}")
+            self.logger.info(f"✓ Données sauvegardées dans {filepath}")
             return True
             
         except Exception as e:
-            print(f"[ERREUR] Impossible de sauvegarder dans {filename} : {e}")
+            self.logger.error(f"Impossible de sauvegarder dans {filename} : {e}")
             return False
 
     def fetch_next_hour_departures_top_airports(self, num_airports: int = 200, 
@@ -176,7 +178,7 @@ class FlightDataScraper:
             Liste de tous les vols de départ pour l'heure ciblée
         """
         offset_desc = self._get_offset_description(hour_offset)
-        print(f"[LOG] Récupération des départs pour {offset_desc} pour les {num_airports} premiers aéroports")
+        self.logger.info(f"Récupération des départs pour {offset_desc} pour les {num_airports} premiers aéroports")
         
         # Charger les données des aéroports
         airports_df = self._load_airports_data()
@@ -185,7 +187,7 @@ class FlightDataScraper:
         
         # Prendre les N premiers aéroports
         top_airports = airports_df.head(num_airports)
-        print(f"[LOG] {len(top_airports)} aéroports chargés depuis le fichier CSV")
+        self.logger.info(f"{len(top_airports)} aéroports chargés depuis le fichier CSV")
         
         all_flights = []
         utc_now = datetime.now(timezone.utc)
@@ -201,26 +203,26 @@ class FlightDataScraper:
                 
                 if flights:
                     all_flights.extend(flights)
-                    print(f"[LOG] ✓ {iata_code}: {len(flights)} vols de départ trouvés")
+                    self.logger.info(f"✓ {iata_code}: {len(flights)} vols de départ trouvés")
                 else:
-                    print(f"[LOG] ⚠ {iata_code}: Aucun vol de départ trouvé")
+                    self.logger.info(f"⚠ {iata_code}: Aucun vol de départ trouvé")
                     
             except Exception as e:
-                print(f"[ERREUR] ✗ {iata_code}: {e}")
+                self.logger.error(f"✗ {iata_code}: {e}")
             
             # Délai entre les requêtes (sauf pour le dernier)
             if index < len(top_airports) - 1:
                 time.sleep(delay)
         
-        print(f"[LOG] Total de {len(all_flights)} vols de départ récupérés pour l'heure cible")
+        self.logger.info(f"Total de {len(all_flights)} vols de départ récupérés pour l'heure cible")
         
         # Sauvegarde automatique (optionnelle)
         if auto_save and all_flights:
             self._save_flight_data(all_flights, num_airports, hour_offset)
         elif auto_save:
-            print(f"[LOG] Aucun vol trouvé, pas de sauvegarde effectuée")
+            self.logger.info(f"Aucun vol trouvé, pas de sauvegarde effectuée")
         else:
-            print(f"[LOG] Sauvegarde automatique désactivée")
+            self.logger.info(f"Sauvegarde automatique désactivée")
         
         return all_flights
 
@@ -240,18 +242,18 @@ class FlightDataScraper:
         """Charge les données des aéroports depuis le fichier CSV"""
         csv_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-            "data/utils", 
+            "utils", 
             "airports_ref.csv"
         )
         
         if not os.path.exists(csv_path):
-            print(f"[ERREUR] Fichier {csv_path} non trouvé")
+            self.logger.error(f"Fichier {csv_path} non trouvé")
             return None
         
         try:
             return pd.read_csv(csv_path, sep=';', encoding='utf-8')
         except Exception as e:
-            print(f"[ERREUR] Impossible de lire le fichier CSV: {e}")
+            self.logger.error(f"Impossible de lire le fichier CSV: {e}")
             return None
 
     def _fetch_airport_flights(self, iata_code: str, timezone_name: str, 
@@ -274,7 +276,7 @@ class FlightDataScraper:
             date_str = target_hour.strftime("%Y-%m-%d")
             shift = target_hour.strftime("%H")
             
-            print(f"[LOG] {index + 1}/{total} - {iata_code} | "
+            self.logger.debug(f"{index + 1}/{total} - {iata_code} | "
                   f"Heure locale: {local_time.strftime('%H:%M')} | "
                   f"Heure cible: {shift}h | Date: {date_str} | "
                   f"Offset: {hour_offset:+d}h")
@@ -297,7 +299,7 @@ class FlightDataScraper:
             return flights
             
         except Exception as e:
-            print(f"[ERREUR] Erreur pour l'aéroport {iata_code}: {e}")
+            self.logger.error(f"Erreur pour l'aéroport {iata_code}: {e}")
             return []
 
     def _save_flight_data(self, flights: List[Dict], num_airports: int, hour_offset: int) -> None:
@@ -310,7 +312,8 @@ class FlightDataScraper:
 
 def main():
     """Fonction principale d'exécution du scraper"""
-    print("[LOG] Lancement du scraper...")
+    logger = get_logger(__name__)
+    logger.info("Lancement du scraper...")
     scraper = FlightDataScraper()
 
     # Option pour récupérer les départs avec différents décalages horaires
@@ -326,7 +329,7 @@ def main():
         hour_offset=-24,
         auto_save=True  # Optionnel: définir à False pour désactiver la sauvegarde automatique
     )
-    print(f"[LOG] {len(next_hour_flights)} vols de départ récupérés")
+    logger.info(f"{len(next_hour_flights)} vols de départ récupérés")
 
 
 if __name__ == "__main__":

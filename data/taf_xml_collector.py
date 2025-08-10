@@ -6,6 +6,11 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
+import sys
+
+# Ajouter le chemin parent pour les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.simple_logger import get_logger
 
 
 class TafXmlCollector:
@@ -33,6 +38,9 @@ class TafXmlCollector:
         # Créer le répertoire si nécessaire
         os.makedirs(self.data_dir, exist_ok=True)
         
+        # Initialiser le logger
+        self.logger = get_logger(__name__)
+        
     def download_xml_file(self) -> Optional[str]:
         """
         Télécharge le fichier TAF XML compressé depuis aviationweather.gov.
@@ -48,7 +56,7 @@ class TafXmlCollector:
             gz_filepath = os.path.join(self.data_dir, gz_filename)
             xml_filepath = os.path.join(self.data_dir, xml_filename)
             
-            print(f"[INFO] Téléchargement depuis {self.TAF_XML_URL}")
+            self.logger.info(f"Téléchargement depuis {self.TAF_XML_URL}")
             
             # Télécharger le fichier
             response = requests.get(self.TAF_XML_URL, stream=True, timeout=30)
@@ -59,14 +67,14 @@ class TafXmlCollector:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            print(f"[SUCCESS] Fichier téléchargé: {gz_filename}")
+            self.logger.info(f"Fichier téléchargé: {gz_filename}")
             
             # Décompresser le fichier
             with gzip.open(gz_filepath, 'rt', encoding='utf-8') as gz_file:
                 with open(xml_filepath, 'w', encoding='utf-8') as xml_file:
                     xml_file.write(gz_file.read())
             
-            print(f"[SUCCESS] Fichier décompressé: {xml_filename}")
+            self.logger.info(f"Fichier décompressé: {xml_filename}")
             
             # Supprimer le fichier compressé pour économiser l'espace
             os.remove(gz_filepath)
@@ -74,7 +82,7 @@ class TafXmlCollector:
             return xml_filepath
             
         except Exception as e:
-            print(f"[ERREUR] Erreur lors du téléchargement: {e}")
+            self.logger.error(f"Erreur lors du téléchargement: {e}")
             traceback.print_exc()
             return None
     
@@ -158,7 +166,7 @@ class TafXmlCollector:
             List[Dict]: Liste des documents TAF convertis en JSON
         """
         try:
-            print(f"[INFO] Lecture du fichier TAF XML: {os.path.basename(xml_filepath)}")
+            self.logger.info(f"Lecture du fichier TAF XML: {os.path.basename(xml_filepath)}")
             
             # Lire et parser le fichier XML avec xmltodict
             with open(xml_filepath, 'r', encoding='utf-8') as xml_file:
@@ -166,7 +174,7 @@ class TafXmlCollector:
             
             # Convertir XML en dictionnaire Python
             data = xmltodict.parse(xml_content)
-            print(f"[INFO] XML parsé avec xmltodict")
+            self.logger.info("XML parsé avec xmltodict")
             
             documents = []
             
@@ -181,7 +189,7 @@ class TafXmlCollector:
             if not isinstance(tafs, list):
                 tafs = [tafs] if tafs else []
             
-            print(f"[INFO] {len(tafs)} éléments TAF trouvés")
+            self.logger.info(f"{len(tafs)} éléments TAF trouvés")
             
             for taf in tafs:
                 if not taf:  # Skip empty TAF
@@ -263,7 +271,7 @@ class TafXmlCollector:
                         
                         documents.append(doc)
             
-            print(f"[SUCCESS] {len(documents)} documents TAF créés")
+            self.logger.info(f"{len(documents)} documents TAF créés")
             
             # Afficher quelques infos sur les documents si disponibles
             if documents:
@@ -271,8 +279,8 @@ class TafXmlCollector:
                 base_docs = sum(1 for doc in documents if doc.get('_metadata_data_type') == 'TAF_BASE')
                 forecast_docs = sum(1 for doc in documents if doc.get('_metadata_data_type') == 'TAF_FORECAST')
                 
-                print(f"[INFO] Documents de base TAF: {base_docs}")
-                print(f"[INFO] Documents de forecast: {forecast_docs}")
+                self.logger.info(f"Documents de base TAF: {base_docs}")
+                self.logger.info(f"Documents de forecast: {forecast_docs}")
                 
                 # Exemple de forecast
                 forecast_doc = next((doc for doc in documents if doc.get('_metadata_data_type') == 'TAF_FORECAST'), None)
@@ -284,15 +292,15 @@ class TafXmlCollector:
                     wind_dir = forecast_doc.get('forecast_@wind_dir_degrees') or forecast_doc.get('forecast_wind_dir_degrees')
                     wind_speed = forecast_doc.get('forecast_@wind_speed_kt') or forecast_doc.get('forecast_wind_speed_kt')
                     
-                    print(f"[INFO] Exemple - Station: {station_id}, Issue: {issue_time}")
-                    print(f"[INFO] Période: {fcst_from} -> {fcst_to}")
-                    print(f"[INFO] Vent: {wind_dir}° à {wind_speed}kt")
-                    print(f"[INFO] Clés par document: {len(forecast_doc)}")
+                    self.logger.info(f"Exemple - Station: {station_id}, Issue: {issue_time}")
+                    self.logger.info(f"Période: {fcst_from} -> {fcst_to}")
+                    self.logger.info(f"Vent: {wind_dir}° à {wind_speed}kt")
+                    self.logger.info(f"Clés par document: {len(forecast_doc)}")
             
             return documents
             
         except Exception as e:
-            print(f"[ERREUR] Erreur lors du parsing XML TAF: {e}")
+            self.logger.error(f"Erreur lors du parsing XML TAF: {e}")
             traceback.print_exc()
             return []
     
@@ -306,7 +314,7 @@ class TafXmlCollector:
         # 1. Télécharger le fichier XML
         xml_filepath = self.download_xml_file()
         if not xml_filepath:
-            print("[ERREUR] Impossible de télécharger le fichier XML")
+            self.logger.error("Impossible de télécharger le fichier XML")
             return []
         
         # 2. Parser le XML en JSON
@@ -315,9 +323,9 @@ class TafXmlCollector:
         # 3. Nettoyer le fichier temporaire (optionnel)
         try:
             os.remove(xml_filepath)
-            print(f"[INFO] Fichier temporaire supprimé: {os.path.basename(xml_filepath)}")
+            self.logger.info(f"Fichier temporaire supprimé: {os.path.basename(xml_filepath)}")
         except Exception as e:
-            print(f"[WARNING] Impossible de supprimer le fichier temporaire: {e}")
+            self.logger.warning(f"Impossible de supprimer le fichier temporaire: {e}")
         
         return documents
     
@@ -337,30 +345,31 @@ class TafXmlCollector:
                 for file_to_delete in files_to_delete:
                     file_path = os.path.join(self.data_dir, file_to_delete)
                     os.remove(file_path)
-                    print(f"[INFO] Ancien fichier TAF supprimé: {file_to_delete}")
+                    self.logger.info(f"Ancien fichier TAF supprimé: {file_to_delete}")
                     
         except Exception as e:
-            print(f"[WARNING] Erreur lors du nettoyage: {e}")
+            self.logger.warning(f"Erreur lors du nettoyage: {e}")
 
 
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Créer une instance du collecteur
     collector = TafXmlCollector()
+    logger = get_logger(__name__)
     
     # Récupérer les données TAF
-    print("[INFO] Démarrage de la collecte TAF XML...")
+    logger.info("Démarrage de la collecte TAF XML...")
     taf_documents = collector.fetch_taf_data()
     
     if taf_documents:
-        print(f"[SUCCESS] {len(taf_documents)} documents TAF récupérés")
+        logger.info(f"{len(taf_documents)} documents TAF récupérés")
         
         # Compter les types de documents
         base_docs = sum(1 for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_BASE')
         forecast_docs = sum(1 for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_FORECAST')
         
-        print(f"Documents de base: {base_docs}")
-        print(f"Documents de forecast: {forecast_docs}")
+        logger.info(f"Documents de base: {base_docs}")
+        logger.info(f"Documents de forecast: {forecast_docs}")
         
         # Afficher quelques exemples
         forecast_examples = [doc for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_FORECAST'][:3]
@@ -368,9 +377,9 @@ if __name__ == "__main__":
             station_id = doc.get('@station_id') or doc.get('station_id', 'N/A')
             fcst_from = doc.get('forecast_@fcst_time_from') or doc.get('forecast_fcst_time_from', 'N/A')
             fcst_to = doc.get('forecast_@fcst_time_to') or doc.get('forecast_fcst_time_to', 'N/A')
-            print(f"Exemple {i+1}: Station {station_id}, Période: {fcst_from} -> {fcst_to}")
+            logger.info(f"Exemple {i+1}: Station {station_id}, Période: {fcst_from} -> {fcst_to}")
     else:
-        print("[ERREUR] Aucune donnée TAF récupérée")
+        logger.error("Aucune donnée TAF récupérée")
     
     # Nettoyer les anciens fichiers
     collector.cleanup_old_files()

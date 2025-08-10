@@ -6,6 +6,11 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
+import sys
+
+# Ajouter le chemin parent pour les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.simple_logger import get_logger
 
 
 class MetarXmlCollector:
@@ -33,6 +38,9 @@ class MetarXmlCollector:
         # Créer le répertoire si nécessaire
         os.makedirs(self.data_dir, exist_ok=True)
         
+        # Initialiser le logger
+        self.logger = get_logger(__name__)
+        
     def download_xml_file(self) -> Optional[str]:
         """
         Télécharge le fichier METAR XML compressé depuis aviationweather.gov.
@@ -48,7 +56,7 @@ class MetarXmlCollector:
             gz_filepath = os.path.join(self.data_dir, gz_filename)
             xml_filepath = os.path.join(self.data_dir, xml_filename)
             
-            print(f"[INFO] Téléchargement depuis {self.METAR_XML_URL}")
+            self.logger.info(f"Téléchargement depuis {self.METAR_XML_URL}")
             
             # Télécharger le fichier
             response = requests.get(self.METAR_XML_URL, stream=True, timeout=30)
@@ -59,14 +67,14 @@ class MetarXmlCollector:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            print(f"[SUCCESS] Fichier téléchargé: {gz_filename}")
+            self.logger.info(f"Fichier téléchargé: {gz_filename}")
             
             # Décompresser le fichier
             with gzip.open(gz_filepath, 'rt', encoding='utf-8') as gz_file:
                 with open(xml_filepath, 'w', encoding='utf-8') as xml_file:
                     xml_file.write(gz_file.read())
             
-            print(f"[SUCCESS] Fichier décompressé: {xml_filename}")
+            self.logger.info(f"Fichier décompressé: {xml_filename}")
             
             # Supprimer le fichier compressé pour économiser l'espace
             os.remove(gz_filepath)
@@ -74,7 +82,7 @@ class MetarXmlCollector:
             return xml_filepath
             
         except Exception as e:
-            print(f"[ERREUR] Erreur lors du téléchargement: {e}")
+            self.logger.error(f"Erreur lors du téléchargement: {e}")
             traceback.print_exc()
             return None
     
@@ -157,7 +165,7 @@ class MetarXmlCollector:
             List[Dict]: Liste des documents METAR convertis en JSON
         """
         try:
-            print(f"[INFO] Lecture du fichier METAR XML: {os.path.basename(xml_filepath)}")
+            self.logger.info(f"Lecture du fichier METAR XML: {os.path.basename(xml_filepath)}")
             
             # Lire et parser le fichier XML avec xmltodict
             with open(xml_filepath, 'r', encoding='utf-8') as xml_file:
@@ -165,7 +173,7 @@ class MetarXmlCollector:
             
             # Convertir XML en dictionnaire Python
             data = xmltodict.parse(xml_content)
-            print(f"[INFO] XML parsé avec xmltodict")
+            self.logger.info("XML parsé avec xmltodict")
             
             documents = []
             
@@ -180,7 +188,7 @@ class MetarXmlCollector:
             if not isinstance(metars, list):
                 metars = [metars] if metars else []
             
-            print(f"[INFO] {len(metars)} éléments METAR trouvés")
+            self.logger.info(f"{len(metars)} éléments METAR trouvés")
             
             for metar in metars:
                 if not metar:  # Skip empty METAR
@@ -212,7 +220,7 @@ class MetarXmlCollector:
                 
                 documents.append(doc)
             
-            print(f"[SUCCESS] {len(documents)} documents METAR créés")
+            self.logger.info(f"{len(documents)} documents METAR créés")
             
             # Afficher quelques infos sur les documents si disponibles
             if documents:
@@ -223,14 +231,14 @@ class MetarXmlCollector:
                 wind_dir = example_doc.get('@wind_dir_degrees') or example_doc.get('wind_dir_degrees')
                 wind_speed = example_doc.get('@wind_speed_kt') or example_doc.get('wind_speed_kt')
                 
-                print(f"[INFO] Exemple - Station: {station_id}, Observation: {observation_time}")
-                print(f"[INFO] Temp: {temp_c}°C, Vent: {wind_dir}° à {wind_speed}kt")
-                print(f"[INFO] Clés par document: {len(example_doc)}")
+                self.logger.info(f"Exemple - Station: {station_id}, Observation: {observation_time}")
+                self.logger.info(f"Temp: {temp_c}°C, Vent: {wind_dir}° à {wind_speed}kt")
+                self.logger.info(f"Clés par document: {len(example_doc)}")
             
             return documents
             
         except Exception as e:
-            print(f"[ERREUR] Erreur lors du parsing XML METAR: {e}")
+            self.logger.error(f"Erreur lors du parsing XML METAR: {e}")
             traceback.print_exc()
             return []
     
@@ -244,7 +252,7 @@ class MetarXmlCollector:
         # 1. Télécharger le fichier XML
         xml_filepath = self.download_xml_file()
         if not xml_filepath:
-            print("[ERREUR] Impossible de télécharger le fichier XML")
+            self.logger.error("Impossible de télécharger le fichier XML")
             return []
         
         # 2. Parser le XML en JSON
@@ -253,9 +261,9 @@ class MetarXmlCollector:
         # 3. Nettoyer le fichier temporaire (optionnel)
         try:
             os.remove(xml_filepath)
-            print(f"[INFO] Fichier temporaire supprimé: {os.path.basename(xml_filepath)}")
+            self.logger.info(f"Fichier temporaire supprimé: {os.path.basename(xml_filepath)}")
         except Exception as e:
-            print(f"[WARNING] Impossible de supprimer le fichier temporaire: {e}")
+            self.logger.warning(f"Impossible de supprimer le fichier temporaire: {e}")
         
         return documents
     
@@ -275,31 +283,32 @@ class MetarXmlCollector:
                 for file_to_delete in files_to_delete:
                     file_path = os.path.join(self.data_dir, file_to_delete)
                     os.remove(file_path)
-                    print(f"[INFO] Ancien fichier METAR supprimé: {file_to_delete}")
+                    self.logger.info(f"Ancien fichier METAR supprimé: {file_to_delete}")
                     
         except Exception as e:
-            print(f"[WARNING] Erreur lors du nettoyage: {e}")
+            self.logger.warning(f"Erreur lors du nettoyage: {e}")
 
 
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Créer une instance du collecteur
     collector = MetarXmlCollector()
+    logger = get_logger(__name__)
     
     # Récupérer les données METAR
-    print("[INFO] Démarrage de la collecte METAR XML...")
+    logger.info("Démarrage de la collecte METAR XML...")
     metar_documents = collector.fetch_metar_data()
     
     if metar_documents:
-        print(f"[SUCCESS] {len(metar_documents)} documents METAR récupérés")
+        logger.info(f"{len(metar_documents)} documents METAR récupérés")
         
         # Afficher quelques exemples
         for i, doc in enumerate(metar_documents[:3]):
             station_id = doc.get('@station_id') or doc.get('station_id', 'N/A')
             temp_c = doc.get('@temp_c') or doc.get('temp_c', 'N/A')
-            print(f"Exemple {i+1}: Station {station_id}, Température: {temp_c}°C")
+            logger.info(f"Exemple {i+1}: Station {station_id}, Température: {temp_c}°C")
     else:
-        print("[ERREUR] Aucune donnée METAR récupérée")
+        logger.error("Aucune donnée METAR récupérée")
     
     # Nettoyer les anciens fichiers
     collector.cleanup_old_files()

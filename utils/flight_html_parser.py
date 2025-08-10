@@ -3,7 +3,13 @@ import re
 from datetime import datetime
 from typing import Optional
 import pytz
+import sys
+import os
 from .airport_timezone_provider import AirportTimezoneProvider
+
+# Ajouter le chemin parent pour les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.simple_logger import get_logger
 
 
 class ParserHtml:
@@ -14,7 +20,8 @@ class ParserHtml:
     
     def __init__(self):
         """Initialise le parser HTML"""
-        print("[LOG] Initialisation du parser HTML")
+        self.logger = get_logger(__name__)
+        self.logger.info("Initialisation du parser HTML")
         # Initialiser le provider de timezone pour récupérer les timezones
         self.timezone_provider = AirportTimezoneProvider()
     
@@ -30,13 +37,13 @@ class ParserHtml:
             # Trouver le tableau des vols
             table = soup.find('table', class_='flightsTable')
             if not table:
-                print("[LOG] Aucun tableau de vols trouvé dans le HTML")
+                self.logger.info("Aucun tableau de vols trouvé dans le HTML")
                 return []
             
             # Vérifier s'il y a un message "no flights"
             no_flights_span = soup.find('span', class_='noflights')
             if no_flights_span:
-                print("[LOG] Aucun vol disponible pour cette période (message 'noflights' détecté)")
+                self.logger.info("Aucun vol disponible pour cette période (message 'noflights' détecté)")
                 return []
             
              # Extraire chaque ligne de vol et gérer les lignes compensation
@@ -71,11 +78,11 @@ class ParserHtml:
                 
                 i += 1
             
-            print(f"[LOG] {len(flights)} vols extraits du HTML")
+            self.logger.info(f"{len(flights)} vols extraits du HTML")
             return flights
             
         except Exception as e:
-            print(f"[ERREUR] Parsing HTML : {e}")
+            self.logger.error(f"Parsing HTML : {e}")
             return []
     
     def _extract_flight_data(self, row, date: str, iata_airport: str, dep_arr: str) -> dict:
@@ -192,7 +199,7 @@ class ParserHtml:
             return flight_data
             
         except Exception as e:
-            print(f"[ERREUR] Extraction données vol : {e}")
+            self.logger.error(f"Extraction données vol : {e}")
             return None
     
     def _extract_times(self, cell):
@@ -304,7 +311,7 @@ class ParserHtml:
             return None
             
         except Exception as e:
-            print(f"[ERREUR] Extraction operated_by : {e}")
+            self.logger.error(f"Extraction operated_by : {e}")
             return None
     
     def _convert_to_utc(self, date_str: str, time_str: str, airport_code: str) -> Optional[str]:
@@ -326,7 +333,7 @@ class ParserHtml:
             # Récupérer la timezone de l'aéroport
             timezone_str = self.timezone_provider.get_timezone_from_iata(airport_code)
             if not timezone_str:
-                print(f"[WARNING] Timezone non trouvée pour l'aéroport {airport_code}")
+                self.logger.warning(f"Timezone non trouvée pour l'aéroport {airport_code}")
                 return None
             
             # Créer un objet datetime à partir de la date et heure locale
@@ -345,5 +352,5 @@ class ParserHtml:
             return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
             
         except Exception as e:
-            print(f"[ERREUR] Conversion UTC pour {airport_code} {date_str} {time_str}: {e}")
+            self.logger.error(f"Conversion UTC pour {airport_code} {date_str} {time_str}: {e}")
             return None
