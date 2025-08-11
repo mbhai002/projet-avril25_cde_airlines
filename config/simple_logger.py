@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Configuration simplifiée du logging pour le projet DST Airlines
-Version allégée et plus facile à maintenir
+Configuration du logging pour le projet DST Airlines
 """
 
 import logging

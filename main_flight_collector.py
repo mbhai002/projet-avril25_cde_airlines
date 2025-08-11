@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Script principal pour récupérer les vols de la prochaine heure et les intégrer dans MongoDB
+Script principal pour récupérer les vols et les intégrer dans MongoDB
 """
 
 import sys
 import os
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from enum import Enum
 import time
 
 # Ajouter le répertoire du projet au path
@@ -19,280 +21,302 @@ from utils.mongodb_manager import MongoDBManager
 from config.simple_logger import get_logger, log_operation_time, log_database_operation
 
 
+class CollectionType(Enum):
+    """Types de collecte disponibles"""
+    REALTIME = "realtime_departures"
+    PAST = "past_departures"
+
+
+@dataclass
+class CollectionConfig:
+    """Configuration pour une collecte"""
+    mongodb_uri: str = "mongodb://localhost:27017/"
+    database_name: str = "dst_airlines2"
+    collection_name: str = "flights_realtime"
+    num_airports: int = 200
+    delay: float = 1.5
+    batch_size: int = 500
+    enable_xml_weather: bool = True
+    hour_offset: int = 1  # 1 pour futur, négatif pour passé
+
+
+@dataclass
+class CollectionResults:
+    """Résultats d'une collecte"""
+    success: bool = False
+    collection_session_id: str = ""
+    start_time: str = ""
+    end_time: str = ""
+    duration_seconds: float = 0
+    flights_collected: int = 0
+    flights_inserted: int = 0
+    metar_xml_collected: int = 0
+    metar_xml_inserted: int = 0
+    taf_xml_collected: int = 0
+    taf_xml_inserted: int = 0
+    mongodb_connected: bool = False
+    errors: List[str] = None
+    
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+
+
 class FlightCollectorMain:
     """
     Classe principale pour orchestrer la collecte de vols et l'intégration MongoDB
     """
     
-    def __init__(self, 
-                 mongodb_uri: str = "mongodb://localhost:27017/",
-                 database_name: str = "dst_airlines",
-                 collection_name: str = "flights_realtime",
-                 enable_xml_weather: bool = True):
+    def __init__(self, config: CollectionConfig):
         """
         Initialise le collecteur principal
         
         Args:
-            mongodb_uri: URI de connexion MongoDB
-            database_name: Nom de la base de données
-            collection_name: Nom de la collection pour les vols en temps réel
-            enable_xml_weather: Si True, active la collecte METAR/TAF XML
+            config: Configuration de la collecte
         """
-        self.mongodb_uri = mongodb_uri
-        self.database_name = database_name
-        self.collection_name = collection_name
-        self.enable_xml_weather = enable_xml_weather
+        self.config = config
+        self.logger = get_logger(__name__)
         
         # Initialiser les composants
         self.scraper = FlightDataScraper(lang="en")
-        self.mongo_manager = MongoDBManager(mongodb_uri, database_name)
+        self.mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
         
         # Initialiser les collecteurs XML si activés
-        if enable_xml_weather:
+        if config.enable_xml_weather:
             self.metar_xml_collector = MetarXmlCollector()
             self.taf_xml_collector = TafXmlCollector()
         else:
             self.metar_xml_collector = None
             self.taf_xml_collector = None
         
-        # Configuration du logging simplifié
-        self.logger = get_logger(__name__)
-        
-        self.logger.info(f"FlightCollectorMain initialized - Database: {database_name}, Collection: {collection_name}, Weather: {enable_xml_weather}")
+        self.logger.info(f"FlightCollectorMain initialized - Database: {config.database_name}, "
+                        f"Collection: {config.collection_name}, Weather: {config.enable_xml_weather}")
     
-    def collect_and_store_next_hour_flights(self, 
-                                          num_airports: int = 50,
-                                          delay: float = 2.0,
-                                          hour_offset: int = 1,
-                                          batch_size: int = 1000) -> Dict[str, any]:
+    def collect_and_store_flights(self, collection_type: CollectionType = CollectionType.REALTIME) -> CollectionResults:
         """
-        Récupère les vols de la prochaine heure et les stocke dans MongoDB
-        Optionnellement, collecte aussi les données METAR/TAF XML selon enable_xml_weather
+        Collecte et stocke les vols selon le type spécifié
         
         Args:
-            num_airports: Nombre d'aéroports à traiter
-            delay: Délai entre les requêtes
-            hour_offset: Décalage horaire (1 = prochaine heure)
-            batch_size: Taille des lots pour l'insertion MongoDB
+            collection_type: Type de collecte (temps réel ou passé)
             
         Returns:
-            Dictionnaire avec les statistiques de l'opération
+            Résultats de l'opération
         """
         operation_start_time = datetime.now()
         
+        # Déterminer les paramètres selon le type de collecte
+        is_past_collection = collection_type == CollectionType.PAST
+        hour_offset = self.config.hour_offset if not is_past_collection else -abs(self.config.hour_offset)
+        session_prefix = "past_session" if is_past_collection else "session"
+        
         # Générer un ID unique pour cette session de collecte
-        collection_session_id = f"session_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
+        session_id = f"{session_prefix}_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
         
-        self.logger.info(f"=== DÉBUT DE LA COLLECTE ===")
-        self.logger.info(f"Session ID: {collection_session_id}")
-        self.logger.info(f"Heure de début: {operation_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info(f"Paramètres: {num_airports} aéroports, offset {hour_offset}h")
+        # Initialiser les résultats
+        results = CollectionResults(
+            collection_session_id=session_id,
+            start_time=operation_start_time.isoformat()
+        )
         
-        results = {
-            'success': False,
-            'collection_session_id': collection_session_id,
-            'start_time': operation_start_time.isoformat(),
-            'end_time': None,
-            'duration_seconds': 0,
-            'flights_collected': 0,
-            'flights_inserted': 0,
-            'metar_xml_collected': 0,
-            'metar_xml_inserted': 0,
-            'taf_xml_collected': 0,
-            'taf_xml_inserted': 0,
-            'mongodb_connected': False,
-            'errors': []
-        }
+        self._log_collection_start(collection_type, session_id, hour_offset)
         
         try:
-            # Étape 1: Connexion à MongoDB
-            self.logger.info("Connecting to MongoDB...")
-            if not self.mongo_manager.connect():
-                error_msg = "Failed to connect to MongoDB"
-                self.logger.error(error_msg)
-                results['errors'].append(error_msg)
+            # Étape 1: Connexion MongoDB
+            if not self._connect_to_mongodb(results):
                 return results
-                
-            results['mongodb_connected'] = True
-            self.logger.info("✓ MongoDB connection successful")
             
-            # Étape 2: Collecte METAR/TAF XML (en premier)
-            if self.enable_xml_weather:
-                self.logger.info("Starting XML weather data collection (METAR/TAF)...")
-                
-                # Collecte METAR XML
-                if self.metar_xml_collector:
-                    try:
-                        metar_start_time = time.time()
-                        self.logger.info("Collecting METAR XML data...")
-                        metar_xml_documents = self.metar_xml_collector.fetch_metar_data()
-                        duration_ms = (time.time() - metar_start_time) * 1000
-                        
-                        if metar_xml_documents:
-                            # Ajouter l'ID de session à chaque document METAR
-                            for doc in metar_xml_documents:
-                                doc['_collection_session_id'] = collection_session_id
-                            
-                            # Insertion dans MongoDB
-                            metar_xml_inserted = self._insert_weather_xml_to_mongodb(
-                                metar_xml_documents, 
-                                "metar_xml", 
-                                batch_size
-                            )
-                            
-                            results['metar_xml_collected'] = len(metar_xml_documents)
-                            results['metar_xml_inserted'] = metar_xml_inserted
-                            
-                            log_database_operation(
-                                self.logger,
-                                "insert",
-                                "weather_metar_xml",
-                                metar_xml_inserted,
-                                duration_ms
-                            )
-                            
-                            self.logger.info(f"✓ {metar_xml_inserted} METAR XML documents inserted ({duration_ms:.1f}ms)")
-                        else:
-                            self.logger.warning("No METAR XML data collected")
-                            
-                    except Exception as e:
-                        error_msg = f"Error during METAR XML collection: {e}"
-                        self.logger.error(error_msg, exc_info=True)
-                        results['errors'].append(error_msg)
-                
-                # Collecte TAF XML
-                if self.taf_xml_collector:
-                    try:
-                        taf_start_time = time.time()
-                        self.logger.info("Collecting TAF XML data...")
-                        taf_xml_documents = self.taf_xml_collector.fetch_taf_data()
-                        duration_ms = (time.time() - taf_start_time) * 1000
-                        
-                        if taf_xml_documents:
-                            # Ajouter l'ID de session à chaque document TAF
-                            for doc in taf_xml_documents:
-                                doc['_collection_session_id'] = collection_session_id
-                            
-                            # Insertion dans MongoDB
-                            taf_xml_inserted = self._insert_weather_xml_to_mongodb(
-                                taf_xml_documents, 
-                                "taf_xml", 
-                                batch_size
-                            )
-                            
-                            results['taf_xml_collected'] = len(taf_xml_documents)
-                            results['taf_xml_inserted'] = taf_xml_inserted
-                            
-                            log_database_operation(
-                                self.logger,
-                                "insert",
-                                "weather_taf_xml",
-                                taf_xml_inserted,
-                                duration_ms
-                            )
-                            
-                            self.logger.info(f"✓ {taf_xml_inserted} TAF XML documents inserted ({duration_ms:.1f}ms)")
-                        else:
-                            self.logger.warning("No TAF XML data collected")
-                            
-                    except Exception as e:
-                        error_msg = f"Error during TAF XML collection: {e}"
-                        self.logger.error(error_msg, exc_info=True)
-                        results['errors'].append(error_msg)
+            # Étape 2: Collecte des données météo (seulement pour temps réel)
+            if self.config.enable_xml_weather and not is_past_collection:
+                self._collect_weather_data(results, session_id)
             
             # Étape 3: Collecte des vols
-            flight_collection_start_time = time.time()
-            self.logger.info(f"Starting flight collection for top {num_airports} airports...")
-            
-            flights = self.scraper.fetch_next_hour_departures_top_airports(
-                num_airports=num_airports,
-                delay=delay,
-                hour_offset=hour_offset,
-                auto_save=False  # Pas de sauvegarde JSON, on va directement en MongoDB
-            )
-            
-            collection_duration_ms = (time.time() - flight_collection_start_time) * 1000
-            results['flights_collected'] = len(flights)
-            
-            log_operation_time(self.logger, "flight_collection", flight_collection_start_time)
-            
-            self.logger.info(f"✓ {len(flights)} flights collected ({collection_duration_ms:.1f}ms)")
-            
+            flights = self._collect_flights(results, hour_offset)
             if not flights:
-                self.logger.warning("No flights collected, but weather data was collected")
-                results['success'] = True  # Succès car les données météo ont été collectées
+                results.success = True  # Succès même sans vols si météo collectée
                 return results
             
-            # Étape 4: Préparation des données pour MongoDB
-            self.logger.info("Preparing flight data for MongoDB insertion...")
-            prepared_flights = self._prepare_flights_for_mongodb(flights, collection_session_id)
+            # Étape 4: Insertion en base
+            self._insert_flights(results, flights, session_id, collection_type, is_past_collection)
             
-            # Étape 5: Insertion dans MongoDB
-            insertion_start_time = time.time()
-            self.logger.info(f"Inserting {len(prepared_flights)} flights into MongoDB...")
-            
-            insertion_success = self._insert_flights_to_mongodb(
-                prepared_flights, 
-                batch_size
-            )
-            
-            insertion_duration_ms = (time.time() - insertion_start_time) * 1000
-            
-            if insertion_success:
-                results['flights_inserted'] = len(prepared_flights)
-                
-                log_database_operation(
-                    self.logger,
-                    "insert",
-                    self.collection_name,
-                    len(prepared_flights),
-                    insertion_duration_ms
-                )
-                
-                self.logger.info(f"✓ {len(prepared_flights)} flights inserted successfully ({insertion_duration_ms:.1f}ms)")
-                results['success'] = True
-            else:
-                error_msg = "Error during flight insertion into MongoDB"
-                self.logger.error(error_msg)
-                results['errors'].append(error_msg)
-                # Même en cas d'erreur pour les vols, on peut considérer un succès partiel si les données météo sont collectées
-                if results['metar_xml_collected'] > 0 or results['taf_xml_collected'] > 0:
-                    results['success'] = True
-                    self.logger.info("Partial success: weather data collected despite flight insertion error")
-                
         except Exception as e:
             error_msg = f"Unexpected error during collection: {e}"
             self.logger.error(error_msg, exc_info=True)
-            results['errors'].append(error_msg)
+            results.errors.append(error_msg)
             
         finally:
-            # Fermeture de la connexion MongoDB
-            self.mongo_manager.disconnect()
+            self._finalize_collection(results, operation_start_time, collection_type)
             
-            # Statistiques finales
-            end_time = datetime.now()
-            results['end_time'] = end_time.isoformat()
-            results['duration_seconds'] = (end_time - operation_start_time).total_seconds()
-            
-            # Log final avec toutes les statistiques
-            self.logger.info("=== COLLECTION COMPLETED ===")
-            self.logger.info(f"Session: {collection_session_id}, Success: {results['success']}, Duration: {results['duration_seconds']:.1f}s")
-            self.logger.info(f"Flights: {results['flights_collected']}/{results['flights_inserted']}, METAR: {results['metar_xml_collected']}/{results['metar_xml_inserted']}, TAF: {results['taf_xml_collected']}/{results['taf_xml_inserted']}")
-            
-            if results['errors']:
-                self.logger.warning(f"Collection completed with {len(results['errors'])} errors")
-                for error in results['errors'][:3]:  # Log only first 3 errors
-                    self.logger.warning(f"Error: {error}")
-            
-        return results
+            return results
     
-    def _prepare_flights_for_mongodb(self, flights: List[Dict], collection_session_id: str) -> List[Dict]:
+    def _log_collection_start(self, collection_type: CollectionType, session_id: str, hour_offset: int):
+        """Log le début de la collecte"""
+        type_desc = "TEMPS RÉEL" if collection_type == CollectionType.REALTIME else "PASSÉS"
+        self.logger.info(f"=== DÉBUT DE LA COLLECTE {type_desc} ===")
+        self.logger.info(f"Session ID: {session_id}")
+        self.logger.info(f"Paramètres: {self.config.num_airports} aéroports, offset {hour_offset}h")
+    
+    def _connect_to_mongodb(self, results: CollectionResults) -> bool:
+        """Établit la connexion MongoDB"""
+        self.logger.info("Connecting to MongoDB...")
+        if not self.mongo_manager.connect():
+            error_msg = "Failed to connect to MongoDB"
+            self.logger.error(error_msg)
+            results.errors.append(error_msg)
+            return False
+        
+        results.mongodb_connected = True
+        self.logger.info("✓ MongoDB connection successful")
+        return True
+    
+    def _collect_weather_data(self, results: CollectionResults, session_id: str):
+        """Collecte les données météo METAR/TAF"""
+        self.logger.info("Starting XML weather data collection (METAR/TAF)...")
+        
+        # Collecte METAR
+        if self.metar_xml_collector:
+            try:
+                start_time = time.time()
+                metar_docs = self.metar_xml_collector.fetch_metar_data()
+                duration_ms = (time.time() - start_time) * 1000
+                
+                if metar_docs:
+                    for doc in metar_docs:
+                        if '_metadata' not in doc:
+                            doc['_metadata'] = {}
+                        doc['_metadata']['collection_session_id'] = session_id
+                    
+                    inserted = self._insert_weather_xml_to_mongodb(metar_docs, "metar_xml")
+                    results.metar_xml_collected = len(metar_docs)
+                    results.metar_xml_inserted = inserted
+                    
+                    log_database_operation(self.logger, "insert", "weather_metar_xml", inserted, duration_ms)
+                    self.logger.info(f"✓ {inserted} METAR XML documents inserted")
+                else:
+                    self.logger.warning("No METAR XML data collected")
+                    
+            except Exception as e:
+                error_msg = f"Error during METAR XML collection: {e}"
+                self.logger.error(error_msg, exc_info=True)
+                results.errors.append(error_msg)
+        
+        # Collecte TAF
+        if self.taf_xml_collector:
+            try:
+                start_time = time.time()
+                taf_docs = self.taf_xml_collector.fetch_taf_data()
+                duration_ms = (time.time() - start_time) * 1000
+                
+                if taf_docs:
+                    for doc in taf_docs:
+                        if '_metadata' not in doc:
+                            doc['_metadata'] = {}
+                        doc['_metadata']['collection_session_id'] = session_id
+                    
+                    inserted = self._insert_weather_xml_to_mongodb(taf_docs, "taf_xml")
+                    results.taf_xml_collected = len(taf_docs)
+                    results.taf_xml_inserted = inserted
+                    
+                    log_database_operation(self.logger, "insert", "weather_taf_xml", inserted, duration_ms)
+                    self.logger.info(f"✓ {inserted} TAF XML documents inserted")
+                else:
+                    self.logger.warning("No TAF XML data collected")
+                    
+            except Exception as e:
+                error_msg = f"Error during TAF XML collection: {e}"
+                self.logger.error(error_msg, exc_info=True)
+                results.errors.append(error_msg)
+    
+    def _collect_flights(self, results: CollectionResults, hour_offset: int) -> List[Dict]:
+        """Collecte les vols"""
+        start_time = time.time()
+        offset_desc = "past" if hour_offset < 0 else "next hour"
+        self.logger.info(f"Starting {offset_desc} flight collection for top {self.config.num_airports} airports...")
+        
+        flights = self.scraper.fetch_next_hour_departures_top_airports(
+            num_airports=self.config.num_airports,
+            delay=self.config.delay,
+            hour_offset=hour_offset,
+            auto_save=False
+        )
+        
+        duration_ms = (time.time() - start_time) * 1000
+        results.flights_collected = len(flights)
+        
+        log_operation_time(self.logger, f"{offset_desc}_flight_collection", start_time)
+        self.logger.info(f"✓ {len(flights)} flights collected ({duration_ms:.1f}ms)")
+        
+        return flights
+    
+    def _insert_flights(self, results: CollectionResults, flights: List[Dict], 
+                       session_id: str, collection_type: CollectionType, is_past: bool):
+        """Insère les vols en base"""
+        self.logger.info(f"Preparing flight data for MongoDB insertion...")
+        prepared_flights = self._prepare_flights_for_mongodb(flights, session_id, collection_type)
+        
+        start_time = time.time()
+        self.logger.info(f"Inserting {len(prepared_flights)} flights into MongoDB...")
+        
+        # Utiliser upsert pour les vols passés, insert normal pour temps réel
+        if is_past:
+            success = self._upsert_flights_to_mongodb(prepared_flights)
+            operation = "upsert"
+        else:
+            success = self._insert_flights_to_mongodb(prepared_flights)
+            operation = "insert"
+        
+        duration_ms = (time.time() - start_time) * 1000
+        
+        if success:
+            results.flights_inserted = len(prepared_flights)
+            log_database_operation(self.logger, operation, self.config.collection_name, 
+                                 len(prepared_flights), duration_ms)
+            self.logger.info(f"✓ {len(prepared_flights)} flights {operation}ed successfully")
+            results.success = True
+        else:
+            error_msg = f"Error during flight {operation} into MongoDB"
+            self.logger.error(error_msg)
+            results.errors.append(error_msg)
+            # Succès partiel si météo collectée
+            if results.metar_xml_collected > 0 or results.taf_xml_collected > 0:
+                results.success = True
+                self.logger.info("Partial success: weather data collected despite flight insertion error")
+    
+    def _finalize_collection(self, results: CollectionResults, start_time: datetime, 
+                           collection_type: CollectionType):
+        """Finalise la collecte"""
+        self.mongo_manager.disconnect()
+        
+        end_time = datetime.now()
+        results.end_time = end_time.isoformat()
+        results.duration_seconds = (end_time - start_time).total_seconds()
+        
+        # Log final
+        type_desc = "TEMPS RÉEL" if collection_type == CollectionType.REALTIME else "PASSÉS"
+        self.logger.info(f"=== COLLECTION {type_desc} COMPLETED ===")
+        self.logger.info(f"Session: {results.collection_session_id}, Success: {results.success}, "
+                        f"Duration: {results.duration_seconds:.1f}s")
+        
+        if collection_type == CollectionType.REALTIME:
+            self.logger.info(f"Flights: {results.flights_collected}/{results.flights_inserted}, "
+                           f"METAR: {results.metar_xml_collected}/{results.metar_xml_inserted}, "
+                           f"TAF: {results.taf_xml_collected}/{results.taf_xml_inserted}")
+        else:
+            self.logger.info(f"Past Flights: {results.flights_collected}/{results.flights_inserted}")
+        
+        if results.errors:
+            self.logger.warning(f"Collection completed with {len(results.errors)} errors")
+            for error in results.errors[:3]:
+                self.logger.warning(f"Error: {error}")
+    
+    def _prepare_flights_for_mongodb(self, flights: List[Dict], session_id: str, 
+                                   collection_type: CollectionType) -> List[Dict]:
         """
         Prépare les données de vol pour l'insertion MongoDB
         
         Args:
             flights: Liste des vols bruts
-            collection_session_id: ID de session pour associer les données
+            session_id: ID de session pour associer les données
+            collection_type: Type de collecte
             
         Returns:
             Liste des vols préparés pour MongoDB
@@ -304,14 +328,14 @@ class FlightCollectorMain:
             # Ajouter des métadonnées d'import
             flight_doc = flight.copy()
             flight_doc['_metadata'] = {
-                'collection_type': 'realtime_departures',
+                'collection_type': collection_type.value,
                 'collected_at': current_time.isoformat(),
                 'source': 'airportinfo.live',
-                'script_version': '1.0'
+                'script_version': '1.0',
+                'collection_session_id': session_id,
+                'is_updated': False,  # Sera mis à True lors d'un upsert qui modifie un document existant
+                'update_count': 0     # Nombre de fois que ce vol a été mis à jour
             }
-            
-            # Ajouter l'ID de session pour associer avec les données météo
-            flight_doc['_collection_session_id'] = collection_session_id
             
             # Ajouter un ID unique basé sur le vol et l'heure de collecte
             flight_doc['_id'] = self._generate_flight_id(flight, current_time)
@@ -342,70 +366,104 @@ class FlightCollectorMain:
         
         return '_'.join(str(elem) for elem in base_elements if elem)
     
-    def _insert_flights_to_mongodb(self, flights: List[Dict], batch_size: int) -> bool:
+    def _insert_flights_to_mongodb(self, flights: List[Dict]) -> bool:
+        """Insère les vols dans MongoDB par lots (insert normal)"""
+        return self._insert_or_upsert_flights(flights, upsert=False)
+    
+    def _upsert_flights_to_mongodb(self, flights: List[Dict]) -> bool:
+        """Insère/met à jour les vols dans MongoDB par lots (upsert)"""
+        return self._insert_or_upsert_flights(flights, upsert=True)
+    
+    def _insert_or_upsert_flights(self, flights: List[Dict], upsert: bool = False) -> bool:
         """
-        Insère les vols dans MongoDB par lots
+        Insère ou met à jour les vols dans MongoDB par lots
         
         Args:
             flights: Liste des vols à insérer
-            batch_size: Taille des lots
+            upsert: Si True, utilise upsert, sinon insert normal
             
         Returns:
             True si l'insertion réussit, False sinon
         """
         try:
-            collection = self.mongo_manager.database[self.collection_name]
-            total_inserted = 0
+            collection = self.mongo_manager.database[self.config.collection_name]
+            total_processed = 0
             
-            # Insertion par lots
-            for i in range(0, len(flights), batch_size):
-                batch = flights[i:i + batch_size]
+            # Traitement par lots
+            for i in range(0, len(flights), self.config.batch_size):
+                batch = flights[i:i + self.config.batch_size]
                 
                 try:
-                    # Utiliser insert_many avec ordered=False pour continuer même en cas de doublons
-                    result = collection.insert_many(batch, ordered=False)
-                    batch_inserted = len(result.inserted_ids)
-                    total_inserted += batch_inserted
+                    if upsert:
+                        # Upsert individuel pour chaque document avec gestion des métadonnées de mise à jour
+                        batch_processed = 0
+                        for flight in batch:
+                            # Vérifier si le document existe déjà
+                            existing_doc = collection.find_one({"_id": flight["_id"]})
+                            
+                            if existing_doc:
+                                # Document existant - mettre à jour les métadonnées
+                                flight["_metadata"]["is_updated"] = True
+                                flight["_metadata"]["update_count"] = existing_doc.get("_metadata", {}).get("update_count", 0) + 1
+                                flight["_metadata"]["last_updated_at"] = datetime.now(timezone.utc).isoformat()
+                                flight["_metadata"]["previous_collection_session_id"] = existing_doc.get("_metadata", {}).get("collection_session_id")
+                            else:
+                                # Nouveau document - garder les métadonnées par défaut
+                                flight["_metadata"]["is_updated"] = False
+                                flight["_metadata"]["update_count"] = 0
+                            
+                            result = collection.replace_one(
+                                {"_id": flight["_id"]},
+                                flight,
+                                upsert=True
+                            )
+                            if result.upserted_id or result.modified_count > 0:
+                                batch_processed += 1
+                    else:
+                        # Insert en lot
+                        result = collection.insert_many(batch, ordered=False)
+                        batch_processed = len(result.inserted_ids)
                     
-                    self.logger.info(f"Lot {i//batch_size + 1}: {batch_inserted}/{len(batch)} vols insérés")
+                    total_processed += batch_processed
+                    operation = "upserted" if upsert else "inserted"
+                    self.logger.info(f"Lot {i//self.config.batch_size + 1}: {batch_processed}/{len(batch)} vols {operation}")
                     
                 except Exception as e:
-                    # Gérer spécifiquement les erreurs de bulk write (doublons, etc.)
-                    if "BulkWriteError" in str(type(e)) or hasattr(e, 'details'):
-                        # C'est une erreur de bulk write (probablement des doublons)
+                    # Gérer les erreurs de bulk write (doublons, etc.)
+                    if not upsert and ("BulkWriteError" in str(type(e)) or hasattr(e, 'details')):
                         details = getattr(e, 'details', {})
                         n_inserted = details.get('nInserted', 0)
                         write_errors = details.get('writeErrors', [])
                         duplicate_errors = sum(1 for err in write_errors if err.get('code') == 11000)
                         
-                        total_inserted += n_inserted
+                        total_processed += n_inserted
                         
                         if duplicate_errors > 0:
-                            self.logger.info(f"Lot {i//batch_size + 1}: {n_inserted}/{len(batch)} vols insérés ({duplicate_errors} doublons ignorés)")
+                            self.logger.info(f"Lot {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} vols insérés ({duplicate_errors} doublons ignorés)")
                         else:
-                            self.logger.warning(f"Lot {i//batch_size + 1}: {n_inserted}/{len(batch)} vols insérés (erreurs: {len(write_errors)})")
+                            self.logger.warning(f"Lot {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} vols insérés (erreurs: {len(write_errors)})")
                     else:
-                        # Autre type d'erreur
-                        self.logger.warning(f"Erreur dans le lot {i//batch_size + 1}: {str(e)[:100]}...")
+                        self.logger.warning(f"Erreur dans le lot {i//self.config.batch_size + 1}: {str(e)[:100]}...")
                     
-                    # Continuer avec le lot suivant
                     continue
             
-            self.logger.info(f"Total inséré: {total_inserted}/{len(flights)} vols")
+            operation = "upserted" if upsert else "inserted"
+            self.logger.info(f"Total {operation}: {total_processed}/{len(flights)} vols")
             
             # Créer des index si nécessaire
             self._ensure_indexes()
             
-            return total_inserted > 0
+            return total_processed > 0
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de l'insertion MongoDB: {e}")
+            operation = "upsert" if upsert else "insertion"
+            self.logger.error(f"Erreur lors de l'{operation} MongoDB: {e}")
             return False
     
     def _ensure_indexes(self):
         """Crée les index nécessaires pour optimiser les requêtes"""
         try:
-            collection = self.mongo_manager.database[self.collection_name]
+            collection = self.mongo_manager.database[self.config.collection_name]
             
             # Index essentiels pour les requêtes
             indexes = [
@@ -415,16 +473,19 @@ class FlightCollectorMain:
                 [("departure.scheduled_utc", 1)],
                 [("_metadata.collected_at", -1)],
                 [("_metadata.collection_type", 1)],
-                [("_collection_session_id", 1)],  # Index pour associer avec les données météo
+                [("_metadata.collection_session_id", 1)],
+                [("_metadata.is_updated", 1)],
+                [("_metadata.update_count", 1)],
                 [("from_code", 1), ("departure.scheduled_utc", 1)],
                 [("_metadata.collected_at", -1), ("from_code", 1)],
-                [("_collection_session_id", 1), ("from_code", 1)]  # Index combiné session + aéroport
+                [("_metadata.collection_session_id", 1), ("from_code", 1)],
+                [("_metadata.is_updated", 1), ("_metadata.collection_type", 1)]
             ]
             
             for index_spec in indexes:
                 try:
                     collection.create_index(index_spec)
-                except Exception as e:
+                except Exception:
                     # Index existe déjà ou autre erreur non critique
                     pass
                     
@@ -433,14 +494,13 @@ class FlightCollectorMain:
         except Exception as e:
             self.logger.warning(f"Erreur lors de la création des index: {e}")
     
-    def _insert_weather_xml_to_mongodb(self, documents: List[Dict], collection_suffix: str, batch_size: int) -> int:
+    def _insert_weather_xml_to_mongodb(self, documents: List[Dict], collection_suffix: str) -> int:
         """
         Insère les documents météorologiques XML dans MongoDB par lots
         
         Args:
             documents: Liste des documents à insérer
             collection_suffix: Suffixe pour le nom de la collection (metar_xml ou taf_xml)
-            batch_size: Taille des lots
             
         Returns:
             Nombre de documents insérés avec succès
@@ -451,21 +511,19 @@ class FlightCollectorMain:
             total_inserted = 0
             
             # Insertion par lots
-            for i in range(0, len(documents), batch_size):
-                batch = documents[i:i + batch_size]
+            for i in range(0, len(documents), self.config.batch_size):
+                batch = documents[i:i + self.config.batch_size]
                 
                 try:
-                    # Utiliser insert_many avec ordered=False pour continuer même en cas de doublons
                     result = collection.insert_many(batch, ordered=False)
                     batch_inserted = len(result.inserted_ids)
                     total_inserted += batch_inserted
                     
-                    self.logger.info(f"Lot {collection_suffix} {i//batch_size + 1}: {batch_inserted}/{len(batch)} documents insérés")
+                    self.logger.info(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {batch_inserted}/{len(batch)} documents insérés")
                     
                 except Exception as e:
-                    # Gérer spécifiquement les erreurs de bulk write (doublons, etc.)
+                    # Gérer les erreurs de bulk write (doublons, etc.)
                     if "BulkWriteError" in str(type(e)) or hasattr(e, 'details'):
-                        # C'est une erreur de bulk write (probablement des doublons)
                         details = getattr(e, 'details', {})
                         n_inserted = details.get('nInserted', 0)
                         write_errors = details.get('writeErrors', [])
@@ -474,14 +532,12 @@ class FlightCollectorMain:
                         total_inserted += n_inserted
                         
                         if duplicate_errors > 0:
-                            self.logger.info(f"Lot {collection_suffix} {i//batch_size + 1}: {n_inserted}/{len(batch)} documents insérés ({duplicate_errors} doublons ignorés)")
+                            self.logger.info(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés ({duplicate_errors} doublons ignorés)")
                         else:
-                            self.logger.warning(f"Lot {collection_suffix} {i//batch_size + 1}: {n_inserted}/{len(batch)} documents insérés (erreurs: {len(write_errors)})")
+                            self.logger.warning(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés (erreurs: {len(write_errors)})")
                     else:
-                        # Autre type d'erreur
-                        self.logger.warning(f"Erreur dans le lot {collection_suffix} {i//batch_size + 1}: {str(e)[:100]}...")
+                        self.logger.warning(f"Erreur dans le lot {collection_suffix} {i//self.config.batch_size + 1}: {str(e)[:100]}...")
                     
-                    # Continuer avec le lot suivant
                     continue
             
             self.logger.info(f"Total {collection_suffix} inséré: {total_inserted}/{len(documents)} documents")
@@ -499,30 +555,20 @@ class FlightCollectorMain:
         """Crée les index nécessaires pour les collections météorologiques"""
         try:
             if data_type == "metar_xml":
-                # Index pour les données METAR XML
                 indexes = [
                     [("@station_id", 1)],
                     [("@observation_time", -1)],
-                    [("_metadata_source", 1)],
-                    [("_metadata_file_downloaded_at", -1)],
-                    [("_collection_session_id", 1)],  # Index pour associer avec les vols
+                    [("_metadata.collection_session_id", 1)],
                     [("@station_id", 1), ("@observation_time", -1)],
-                    [("_metadata_data_type", 1)],
-                    [("_collection_session_id", 1), ("@station_id", 1)]  # Index combiné
+                    [("_metadata.collection_session_id", 1), ("@station_id", 1)]
                 ]
             elif data_type == "taf_xml":
-                # Index pour les données TAF XML
                 indexes = [
                     [("@station_id", 1)],
                     [("@issue_time", -1)],
-                    [("_metadata_source", 1)],
-                    [("_metadata_file_downloaded_at", -1)],
-                    [("_collection_session_id", 1)],  # Index pour associer avec les vols
+                    [("_metadata.collection_session_id", 1)],
                     [("@station_id", 1), ("@issue_time", -1)],
-                    [("_metadata_data_type", 1)],
-                    [("forecast_@fcst_time_from", 1)],
-                    [("forecast_@fcst_time_to", 1)],
-                    [("_collection_session_id", 1), ("@station_id", 1)]  # Index combiné
+                    [("_metadata.collection_session_id", 1), ("@station_id", 1)]
                 ]
             else:
                 indexes = []
@@ -530,96 +576,82 @@ class FlightCollectorMain:
             for index_spec in indexes:
                 try:
                     collection.create_index(index_spec)
-                except Exception as e:
-                    # Index existe déjà ou autre erreur non critique
+                except Exception:
                     pass
                     
             self.logger.info(f"Index {data_type} MongoDB vérifiés/créés")
             
         except Exception as e:
             self.logger.warning(f"Erreur lors de la création des index {data_type}: {e}")
+
+
+# Fonctions utilitaires et configuration
+def create_config(collection_type: CollectionType, hours_offset: int = None) -> CollectionConfig:
+    """Crée une configuration selon le type de collecte"""
+    config = CollectionConfig()
     
-    def _extract_airport_codes_from_flights(self, flights: List[Dict]) -> List[str]:
-        """
-        Extrait tous les codes d'aéroports uniques des vols collectés
-        
-        Args:
-            flights: Liste des vols
-            
-        Returns:
-            Liste des codes d'aéroports uniques
-        """
-        airport_codes = set()
-        
-        for flight in flights:
-            # Aéroport de départ
-            from_code = flight.get('from_code')
-            if from_code:
-                airport_codes.add(from_code)
-            
-            # Aéroport d'arrivée
-            to_code = flight.get('to_code')
-            if to_code:
-                airport_codes.add(to_code)
-        
-        return list(airport_codes)
+    if collection_type == CollectionType.PAST:
+        config.enable_xml_weather = False
+        config.hour_offset = hours_offset or -20  # Par défaut il y a 20h
+    else:
+        config.hour_offset = hours_offset or 1  # Par défaut prochaine heure
+    
+    return config
 
 
 def main():
-    """Fonction principale"""
+    """Fonction principale pour collecte temps réel"""
     print("=== COLLECTEUR DE VOLS EN TEMPS RÉEL ===")
     
-    # Configuration
-    config = {
-        'mongodb_uri': "mongodb://localhost:27017/",
-        'database_name': "dst_airlines2",
-        'collection_name': "flights_realtime",
-        'num_airports': 200,  # Nombre d'aéroports à traiter
-        'delay': 1.5,        # Délai entre requêtes
-        'hour_offset': 1,    # Prochaine heure
-        'batch_size': 500,   # Taille des lots MongoDB
-        'enable_xml_weather': True  # Activer la collecte METAR/TAF XML
-    }
+    config = create_config(CollectionType.REALTIME)
+    collector = FlightCollectorMain(config)
+    results = collector.collect_and_store_flights(CollectionType.REALTIME)
     
-    # Initialiser le collecteur
-    collector = FlightCollectorMain(
-        mongodb_uri=config['mongodb_uri'],
-        database_name=config['database_name'],
-        collection_name=config['collection_name'],
-        enable_xml_weather=config['enable_xml_weather']
-    )
+    return _print_results_and_return_success(results, "TEMPS RÉEL", config)
+
+
+def main_past_flights():
+    """Fonction principale pour collecte vols passés"""
+    print("=== COLLECTEUR DE VOLS PASSÉS ===")
     
-    # Lancer la collecte
-    results = collector.collect_and_store_next_hour_flights(
-        num_airports=config['num_airports'],
-        delay=config['delay'],
-        hour_offset=config['hour_offset'],
-        batch_size=config['batch_size']
-    )
+    config = create_config(CollectionType.PAST, hours_offset=-20)
+    collector = FlightCollectorMain(config)
+    results = collector.collect_and_store_flights(CollectionType.PAST)
     
-    # Afficher le résumé
-    print(f"\n=== RÉSUMÉ ===")
-    print(f"Succès: {'✓' if results['success'] else '✗'}")
-    print(f"Durée: {results['duration_seconds']:.1f} secondes")
-    print(f"Vols collectés: {results['flights_collected']}")
-    print(f"Vols insérés: {results['flights_inserted']}")
-    if config['enable_xml_weather']:
-        print(f"METAR XML collectés: {results['metar_xml_collected']}")
-        print(f"METAR XML insérés: {results['metar_xml_inserted']}")
-        print(f"TAF XML collectés: {results['taf_xml_collected']}")
-        print(f"TAF XML insérés: {results['taf_xml_inserted']}")
+    return _print_results_and_return_success(results, "PASSÉS", config)
+
+
+def _print_results_and_return_success(results: CollectionResults, type_desc: str, config: CollectionConfig) -> bool:
+    """Affiche les résultats et retourne le statut de succès"""
+    print(f"\n=== RÉSUMÉ {type_desc} ===")
+    print(f"Succès: {'✓' if results.success else '✗'}")
+    print(f"Durée: {results.duration_seconds:.1f} secondes")
+    print(f"Vols collectés: {results.flights_collected}")
+    print(f"Vols insérés: {results.flights_inserted}")
     
-    if results['errors']:
-        print(f"Erreurs: {len(results['errors'])}")
-        for error in results['errors']:
+    if config.enable_xml_weather:
+        print(f"METAR XML collectés: {results.metar_xml_collected}")
+        print(f"METAR XML insérés: {results.metar_xml_inserted}")
+        print(f"TAF XML collectés: {results.taf_xml_collected}")
+        print(f"TAF XML insérés: {results.taf_xml_inserted}")
+    
+    if results.errors:
+        print(f"Erreurs: {len(results.errors)}")
+        for error in results.errors:
             print(f"  - {error}")
     
-    return results['success']
+    return results.success
 
 
-def run_loop():
-    """Exécute en boucle toutes les heures à XX:05"""
-    print("=== MODE BOUCLE - Exécution toutes les heures à XX:05 ===")
+def run_loop(collect_past_flights: bool = False):
+    """
+    Exécute en boucle toutes les heures à XX:05
+    
+    Args:
+        collect_past_flights: Si True, collecte les vols passés au lieu des vols temps réel
+    """
+    mode_desc = "VOLS PASSÉS" if collect_past_flights else "VOLS TEMPS RÉEL"
+    print(f"=== MODE BOUCLE - {mode_desc} - Exécution toutes les heures à XX:05 ===")
     print("Appuyez sur Ctrl+C pour arrêter\n")
     
     try:
@@ -635,18 +667,140 @@ def run_loop():
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
             time.sleep(wait_seconds)
             
-            # Exécuter la collecte
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte...")
+            # Exécuter la collecte selon le mode
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte {mode_desc.lower()}...")
             start_time = datetime.now()
-            success = main()
+            
+            if collect_past_flights:
+                success = main_past_flights()
+            else:
+                success = main()
+                
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
-            if success:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Collecte terminée avec succès ({duration:.1f}s)")
-            else:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ✗ Collecte terminée avec des erreurs ({duration:.1f}s)")
+            status = "✓ succès" if success else "✗ erreurs"
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte {mode_desc.lower()} terminée avec {status} ({duration:.1f}s)")
+            print("=" * 60 + "\n")
             
+    except KeyboardInterrupt:
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
+        print("Collecteur arrêté.")
+
+
+def run_combined_loop():
+    """
+    Exécute en boucle toutes les heures à XX:05 en collectant vols actuels ET passés
+    """
+    print("=== MODE BOUCLE COMBINÉ - Vols actuels + passés - Exécution toutes les heures à XX:05 ===")
+    print("Collecte les vols temps réel ET les vols passés à chaque exécution")
+    print("Appuyez sur Ctrl+C pour arrêter\n")
+    
+    try:
+        while True:
+            # Calculer la prochaine exécution à XX:05
+            now = datetime.now()
+            next_run = now.replace(minute=5, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(hours=1)
+            
+            wait_seconds = (next_run - datetime.now()).total_seconds()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Prochaine exécution combinée prévue à {next_run.strftime('%H:%M:%S')}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
+            time.sleep(wait_seconds)
+            
+            # Exécuter les deux collectes
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte COMBINÉE (temps réel + passés)...")
+            start_time = datetime.now()
+            
+            # 1. Collecte temps réel (avec météo)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → Phase 1: Collecte vols temps réel...")
+            success_realtime = main()
+            
+            # Petite pause entre les deux collectes
+            time.sleep(2)
+            
+            # 2. Collecte vols passés
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → Phase 2: Collecte vols passés...")
+            success_past = main_past_flights()
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Résumé global
+            if success_realtime and success_past:
+                status = "✓ succès complet (temps réel + passés)"
+            elif success_realtime or success_past:
+                status = "⚠ succès partiel (une collecte échouée)"
+            else:
+                status = "✗ échec des deux collectes"
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte combinée terminée avec {status} ({duration:.1f}s)")
+            print("=" * 60 + "\n")
+            
+    except KeyboardInterrupt:
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
+        print("Collecteur arrêté.")
+
+
+def run_mixed_loop():
+    """
+    Exécute en boucle en alternant vols temps réel et vols passés
+    - Minutes paires (00, 02, 04, 06, 08, 10, etc.) : vols temps réel
+    - Minutes impaires (01, 03, 05, 07, 09, 11, etc.) : vols passés
+    """
+    print("=== MODE BOUCLE MIXTE - Alternance temps réel/passés toutes les 5 minutes ===")
+    print("Temps réel: XX:05, XX:15, XX:25, XX:35, XX:45, XX:55")
+    print("Vols passés: XX:10, XX:20, XX:30, XX:40, XX:50, XX:00")
+    print("Appuyez sur Ctrl+C pour arrêter\n")
+    
+    try:
+        while True:
+            now = datetime.now()
+            
+            # Calculer la prochaine exécution (toutes les 10 minutes)
+            current_minute = now.minute
+            
+            # Déterminer le prochain slot (05, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 00)
+            next_slots = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
+            next_minute = None
+            
+            for slot in next_slots:
+                if slot > current_minute:
+                    next_minute = slot
+                    break
+            
+            if next_minute is None:
+                # Prochaine heure à 00
+                next_run = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+                collect_past = True  # 00 = vols passés
+            else:
+                next_run = now.replace(minute=next_minute, second=0, microsecond=0)
+                # Minutes 05, 15, 25, 35, 45, 55 = temps réel
+                # Minutes 10, 20, 30, 40, 50, 00 = passés
+                collect_past = next_minute % 10 == 0
+            
+            mode_desc = "VOLS PASSÉS" if collect_past else "VOLS TEMPS RÉEL"
+            
+            wait_seconds = (next_run - datetime.now()).total_seconds()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Prochaine collecte {mode_desc.lower()} à {next_run.strftime('%H:%M:%S')}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
+            time.sleep(wait_seconds)
+            
+            # Exécuter la collecte
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte {mode_desc.lower()}...")
+            start_time = datetime.now()
+            
+            if collect_past:
+                success = main_past_flights()
+            else:
+                success = main()
+                
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            status = "✓ succès" if success else "✗ erreurs"
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte {mode_desc.lower()} terminée avec {status} ({duration:.1f}s)")
             print("=" * 60 + "\n")
             
     except KeyboardInterrupt:
@@ -657,17 +811,26 @@ def run_loop():
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Collecteur de vols")
-    parser.add_argument(
-        '--loop', 
-        action='store_true',
-        help="Exécuter en boucle toutes les heures"
-    )
+    parser = argparse.ArgumentParser(description="Collecteur de vols simplifié")
+    parser.add_argument('--loop', action='store_true', help="Exécuter en boucle toutes les heures (vols actuels + passés)")
+    parser.add_argument('--loop-realtime', action='store_true', help="Exécuter en boucle toutes les heures (vols temps réel seulement)")
+    parser.add_argument('--loop-past', action='store_true', help="Exécuter en boucle toutes les heures (vols passés seulement)")
+    parser.add_argument('--loop-mixed', action='store_true', help="Exécuter en boucle mixte (alternance temps réel/passés)")
+    parser.add_argument('--past', action='store_true', help="Collecter les vols passés une seule fois (il y a 20 heures)")
     
     args = parser.parse_args()
     
     if args.loop:
-        run_loop()
+        run_combined_loop()  # Par défaut: vols actuels + passés
+    elif args.loop_realtime:
+        run_loop(collect_past_flights=False)
+    elif args.loop_past:
+        run_loop(collect_past_flights=True)
+    elif args.loop_mixed:
+        run_mixed_loop()
+    elif args.past:
+        success = main_past_flights()
+        exit(0 if success else 1)
     else:
         success = main()
         exit(0 if success else 1)
