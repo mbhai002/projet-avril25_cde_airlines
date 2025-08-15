@@ -39,6 +39,7 @@ wheels/
 Thumbs.db
 
 # Données locales
+data/__pycache__/
 data/metar/*.xml
 data/taf/*.xml
 *.log
@@ -48,3 +49,4 @@ logs/
 # MongoDB dumps
 *.bson
 dumps/
+data/__pycache__/flight_data_scrapper.cpython-311.pyc

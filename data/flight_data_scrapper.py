@@ -196,6 +196,9 @@ class FlightDataScraper:
             iata_code = airport['code_iata']
             timezone_name = airport['timezone']
             
+            # Log de progression
+            self.logger.info(f"[{index + 1}/{num_airports}] Traitement de l'aéroport {iata_code}...")
+            
             try:
                 flights = self._fetch_airport_flights(
                     iata_code, timezone_name, utc_now, hour_offset, index, num_airports
