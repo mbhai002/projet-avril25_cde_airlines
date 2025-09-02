@@ -608,3 +608,469 @@ class FlightOrchestrator:
             
         except Exception as e:
             self.logger.warning(f"Erreur lors de la création des index {data_type}: {e}")
+
+    def associate_flights_with_metar(self, target_session_id: str = None) -> CollectionResults:
+        """
+        ÉTAPE 4: Associe les données de vols avec les données METAR
+        Ajoute un champ metar_id à chaque vol quand il y a correspondance ICAO/IATA
+        
+        Args:
+            target_session_id: Session ID spécifique des vols à traiter (optionnel)
+        
+        Returns:
+            Résultats de l'opération
+        """
+        operation_start_time = datetime.now()
+        session_id = f"association_metar_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
+        
+        results = CollectionResults(
+            collection_session_id=session_id,
+            start_time=operation_start_time.isoformat()
+        )
+        
+        self.logger.info("=== ÉTAPE 4: ASSOCIATION VOLS-METAR ===")
+        self.logger.info(f"Session ID: {session_id}")
+        if target_session_id:
+            self.logger.info(f"Filtrage sur session de vols: {target_session_id}")
+        
+        try:
+            # Connexion MongoDB
+            if not self._connect_to_mongodb(results):
+                return results
+            
+            # Charger la table de correspondance IATA/ICAO
+            iata_icao_mapping = self._load_iata_icao_mapping()
+            
+            if not iata_icao_mapping:
+                error_msg = "Impossible de charger la correspondance IATA/ICAO"
+                results.errors.append(error_msg)
+                self.logger.error(error_msg)
+                return results
+            
+            # Obtenir les collections
+            flights_collection = self.mongo_manager.database[self.config.collection_name]
+            metar_collection = self.mongo_manager.database["weather_metar_xml"]
+            
+            # Construire le filtre pour les vols
+            flights_filter = {}
+            if target_session_id:
+                flights_filter["_metadata.collection_session_id"] = target_session_id
+                self.logger.info(f"Recherche des vols avec session_id: {target_session_id}")
+            else:
+                # Trouver toutes les sessions de collecte de la journée courante (comportement par défaut)
+                today_str = operation_start_time.strftime('%Y%m%d')
+                flights_filter["_metadata.collection_session_id"] = {"$regex": f"^realtime_{today_str}"}
+                self.logger.info(f"Recherche des vols de la journée: {today_str}")
+            
+            # Exclure les vols avec operated_by (doublons code-share)
+            flights_filter["operated_by"] = {"$exists": False}
+            
+            # Compter les vols à traiter
+            total_flights = flights_collection.count_documents(flights_filter)
+            if total_flights == 0:
+                self.logger.warning("Aucun vol trouvé avec les critères spécifiés")
+                results.success = True
+                return results
+            
+            self.logger.info(f"{total_flights} vols trouvés pour association METAR (doublons code-share exclus)")
+            
+            # Récupérer les vols selon le filtre défini
+            current_flights = list(flights_collection.find(flights_filter))
+            
+            if not current_flights:
+                self.logger.info("Aucun vol trouvé pour l'association")
+                results.success = True
+                return results
+            
+            # Récupérer tous les derniers METAR (le plus récent pour chaque station)
+            latest_metars_pipeline = [
+                {
+                    "$sort": {"observation_time": -1}  # Trier par heure d'observation décroissante
+                },
+                {
+                    "$group": {
+                        "_id": "$station_id",  # Grouper par station (sans @)
+                        "latest_metar": {"$first": "$$ROOT"}  # Prendre le plus récent
+                    }
+                },
+                {
+                    "$replaceRoot": {"newRoot": "$latest_metar"}  # Remplacer la racine
+                }
+            ]
+            
+            latest_metars = list(metar_collection.aggregate(latest_metars_pipeline))
+            
+            if not latest_metars:
+                self.logger.info("Aucune donnée METAR trouvée dans la base pour l'association")
+                results.success = True
+                return results
+            
+            self.logger.info(f"Association de {len(current_flights)} vols avec {len(latest_metars)} derniers METAR (toutes stations)")
+            
+            # Créer un index de recherche METAR par station ICAO
+            metar_by_icao = {}
+            for metar in latest_metars:
+                station_id = metar.get('station_id')  # Utiliser station_id (sans @)
+                if station_id:
+                    metar_by_icao[station_id] = metar.get('_id')
+            
+            self.logger.info(f"Index METAR créé pour {len(metar_by_icao)} stations ICAO")
+            
+            # Parcourir chaque vol et chercher les correspondances
+            flights_updated = 0
+            
+            for flight in current_flights:
+                try:
+                    flight_updated = False
+                    update_fields = {}
+                    
+                    # Traiter uniquement l'aéroport de départ
+                    departure_iata = flight.get('from_code', '')
+                    if departure_iata and departure_iata in iata_icao_mapping:
+                        departure_icao = iata_icao_mapping[departure_iata]
+                        if departure_icao in metar_by_icao:
+                            update_fields['metar_id'] = metar_by_icao[departure_icao]
+                            flight_updated = True
+                            self.logger.debug(f"Vol {flight.get('_id')}: {departure_iata} -> METAR {metar_by_icao[departure_icao]}")
+                    
+                    # Mettre à jour le vol si une correspondance a été trouvée
+                    if flight_updated:
+                        # Ajouter les métadonnées d'association
+                        update_fields['_metadata.metar_associated'] = True
+                        update_fields['_metadata.metar_association_date'] = operation_start_time.isoformat()
+                        
+                        flights_collection.update_one(
+                            {"_id": flight["_id"]},
+                            {"$set": update_fields}
+                        )
+                        flights_updated += 1
+                        
+                except Exception as e:
+                    error_msg = f"Erreur lors de l'association du vol {flight.get('_id', 'unknown')}: {e}"
+                    self.logger.warning(error_msg)
+                    results.errors.append(error_msg)
+            
+            self.logger.info(f"✓ {flights_updated} vols mis à jour avec des associations METAR")
+            results.flights_inserted = flights_updated  # Réutilise ce champ pour les vols mis à jour
+            results.success = True
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de l'association vols-METAR: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            results.errors.append(error_msg)
+            
+        finally:
+            self._finalize_collection(results, operation_start_time, "ASSOCIATION VOLS-METAR")
+            
+        return results
+    
+    def _load_iata_icao_mapping(self) -> dict:
+        """
+        Charge la correspondance IATA/ICAO depuis le fichier CSV
+        
+        Returns:
+            Dictionnaire {code_iata: icao_code}
+        """
+        try:
+            import csv
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            csv_path = os.path.join(project_root, "utils", "airports_ref.csv")
+            
+            mapping = {}
+            
+            with open(csv_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile, delimiter=';')
+                for row in reader:
+                    iata = row.get('code_iata', '').strip()
+                    icao = row.get('icao_code', '').strip()
+                    if iata and icao:
+                        mapping[iata] = icao
+            
+            self.logger.info(f"Correspondance IATA/ICAO chargée: {len(mapping)} aéroports")
+            return mapping
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors du chargement de la correspondance IATA/ICAO: {e}")
+            return {}
+
+    def _find_matching_taf_forecast(self, tafs_list: list, arrival_time_utc: str) -> dict:
+        """
+        Trouve le forecast TAF qui correspond à l'heure d'arrivée du vol
+        Priorité: 1) Interval le plus petit, 2) Priorité des indicateurs de changement
+        
+        Args:
+            tafs_list: Liste des TAF pour une station
+            arrival_time_utc: Heure d'arrivée UTC du vol au format ISO
+            
+        Returns:
+            Dictionnaire du TAF forecast correspondant ou None
+        """
+        try:
+            from datetime import datetime
+            
+            # Convertir l'heure d'arrivée en objet datetime
+            arrival_dt = datetime.fromisoformat(arrival_time_utc.replace('Z', '+00:00'))
+            
+            # Définir la priorité des indicateurs de changement (plus bas = meilleur)
+            priority_map = {
+                'FM': 1,      # FROM - changement permanent, priorité max
+                'BECMG': 2,   # BECOMING - changement graduel
+                'TEMPO': 3,   # TEMPORARY - changement temporaire
+                'PROB': 4,    # PROBABILITY - changement probable
+                None: 5,      # Aucun indicateur
+                '': 5         # Indicateur vide
+            }
+            
+            candidates = []
+            
+            for taf in tafs_list:
+                try:
+                    # Vérifier si c'est un forecast TAF (pas juste base)
+                    if taf.get('_metadata_data_type') != 'TAF_FORECAST':
+                        continue
+                    
+                    fcst_time_from = taf.get('forecast_fcst_time_from')
+                    fcst_time_to = taf.get('forecast_fcst_time_to')
+                    
+                    if not fcst_time_from:
+                        continue
+                    
+                    # Convertir les heures de forecast
+                    from_dt = datetime.fromisoformat(fcst_time_from.replace('Z', '+00:00'))
+                    to_dt = None
+                    interval_duration = float('inf')  # Durée de l'intervalle
+                    
+                    if fcst_time_to:
+                        to_dt = datetime.fromisoformat(fcst_time_to.replace('Z', '+00:00'))
+                        interval_duration = (to_dt - from_dt).total_seconds()
+                    
+                    # Vérifier si l'heure d'arrivée est dans l'intervalle
+                    is_in_interval = False
+                    distance_to_center = 0
+                    
+                    if to_dt:
+                        # Intervalle fermé [from, to]
+                        if from_dt <= arrival_dt <= to_dt:
+                            is_in_interval = True
+                            # Distance au centre de l'intervalle
+                            center_dt = from_dt + (to_dt - from_dt) / 2
+                            distance_to_center = abs((arrival_dt - center_dt).total_seconds())
+                    else:
+                        # Intervalle ouvert [from, +∞)
+                        if arrival_dt >= from_dt:
+                            is_in_interval = True
+                            # Distance depuis le début (pénalisée pour les intervalles ouverts)
+                            distance_to_center = abs((arrival_dt - from_dt).total_seconds())
+                    
+                    if is_in_interval:
+                        # Récupérer l'indicateur de changement
+                        change_indicator = taf.get('forecast_change_indicator')
+                        priority = priority_map.get(change_indicator, 5)
+                        
+                        candidates.append({
+                            'taf': taf,
+                            'interval_duration': interval_duration,
+                            'distance_to_center': distance_to_center,
+                            'change_priority': priority,
+                            'change_indicator': change_indicator
+                        })
+                
+                except Exception as e:
+                    self.logger.debug(f"Erreur lors de l'analyse du TAF {taf.get('_id')}: {e}")
+                    continue
+            
+            # Trier les candidats selon les critères de priorité
+            if not candidates:
+                return None
+            
+            # Tri par:
+            # 1. Priorité de l'indicateur de changement (FM > BECMG > TEMPO > PROB > rien)
+            # 2. Durée d'intervalle (plus petit = mieux)
+            # 3. Distance au centre (plus proche = mieux)
+            candidates.sort(key=lambda x: (
+                x['change_priority'],      # Priorité indicateur (1=FM, 5=rien)
+                x['interval_duration'],    # Durée intervalle (plus petit = mieux)
+                x['distance_to_center']    # Distance centre (plus petit = mieux)
+            ))
+            
+            best_match = candidates[0]['taf']
+            
+            # Log de débogage amélioré
+            if best_match:
+                best_candidate = candidates[0]
+                duration_hours = best_candidate['interval_duration'] / 3600 if best_candidate['interval_duration'] != float('inf') else '∞'
+                distance_hours = best_candidate['distance_to_center'] / 3600
+                indicator = best_candidate['change_indicator'] or 'Base'
+                
+                self.logger.debug(f"TAF trouvé pour {arrival_time_utc}: {best_match.get('_id')} "
+                                f"(indicateur: {indicator}, durée: {duration_hours}h, "
+                                f"distance: {distance_hours:.1f}h)")
+            
+            return best_match
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la recherche TAF pour {arrival_time_utc}: {e}")
+            return None
+
+    def associate_flights_with_taf(self, target_session_id: str = None) -> CollectionResults:
+        """
+        ÉTAPE 5: Associe les données de vols avec les données TAF
+        Ajoute un champ taf_id aux vols pour l'aéroport d'arrivée quand il y a correspondance ICAO/IATA
+        
+        Args:
+            target_session_id: Session ID spécifique des vols à traiter (optionnel)
+        
+        Returns:
+            Résultats de l'opération
+        """
+        operation_start_time = datetime.now()
+        session_id = f"association_taf_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
+        
+        results = CollectionResults(
+            collection_session_id=session_id,
+            start_time=operation_start_time.isoformat()
+        )
+        
+        self.logger.info("=== ÉTAPE 5: ASSOCIATION VOLS-TAF ===")
+        self.logger.info(f"Session ID: {session_id}")
+        if target_session_id:
+            self.logger.info(f"Filtrage sur session de vols: {target_session_id}")
+        
+        try:
+            # Connexion MongoDB
+            if not self._connect_to_mongodb(results):
+                return results
+            
+            # Charger la table de correspondance IATA/ICAO
+            iata_icao_mapping = self._load_iata_icao_mapping()
+            
+            if not iata_icao_mapping:
+                error_msg = "Impossible de charger la correspondance IATA/ICAO"
+                results.errors.append(error_msg)
+                self.logger.error(error_msg)
+                return results
+            
+            # Obtenir les collections
+            flights_collection = self.mongo_manager.database[self.config.collection_name]
+            taf_collection = self.mongo_manager.database["weather_taf_xml"]
+            
+            # Construire le filtre pour les vols
+            flights_filter = {}
+            if target_session_id:
+                flights_filter["_metadata.collection_session_id"] = target_session_id
+                self.logger.info(f"Recherche des vols avec session_id: {target_session_id}")
+            else:
+                # Trouver toutes les sessions de collecte de la journée courante (comportement par défaut)
+                today_str = operation_start_time.strftime('%Y%m%d')
+                flights_filter["_metadata.collection_session_id"] = {"$regex": f"^realtime_{today_str}"}
+                self.logger.info(f"Recherche des vols de la journée: {today_str}")
+            
+            # Exclure les vols avec operated_by (doublons code-share)
+            flights_filter["operated_by"] = {"$exists": False}
+            
+            # Compter les vols à traiter
+            total_flights = flights_collection.count_documents(flights_filter)
+            if total_flights == 0:
+                self.logger.warning("Aucun vol trouvé avec les critères spécifiés")
+                results.success = True
+                return results
+            
+            self.logger.info(f"{total_flights} vols trouvés pour association TAF (doublons code-share exclus)")
+            
+            # Récupérer les vols selon le filtre défini
+            current_flights = list(flights_collection.find(flights_filter))
+            
+            if not current_flights:
+                self.logger.info("Aucun vol trouvé pour l'association TAF")
+                results.success = True
+                return results
+            
+            # Récupérer uniquement les TAF dont l'intervalle de fin est supérieur à l'heure courante
+            # Cela évite de récupérer les forecasts expirés
+            current_time_iso = operation_start_time.isoformat() + "Z"
+            
+            valid_tafs = list(taf_collection.find({
+                "$or": [
+                    # TAF avec intervalle de fin dans le futur
+                    {"forecast_fcst_time_to": {"$gte": current_time_iso}},
+                    # TAF sans heure de fin (intervalle ouvert)
+                    {"forecast_fcst_time_to": {"$exists": False}},
+                    {"forecast_fcst_time_to": None}
+                ]
+            }))
+            
+            if not valid_tafs:
+                self.logger.info("Aucune donnée TAF valide trouvée dans la base pour l'association")
+                results.success = True
+                return results
+            
+            self.logger.info(f"Association de {len(current_flights)} vols avec {len(valid_tafs)} forecasts TAF valides (filtrés par heure)")
+            
+            # Créer un index de recherche TAF par station ICAO et intervalle de temps
+            tafs_by_station = {}
+            for taf in valid_tafs:
+                station_id = taf.get('station_id')
+                if station_id:
+                    if station_id not in tafs_by_station:
+                        tafs_by_station[station_id] = []
+                    tafs_by_station[station_id].append(taf)
+            
+            self.logger.info(f"Index TAF créé pour {len(tafs_by_station)} stations ICAO")
+            
+            # Parcourir chaque vol et chercher les correspondances TAF par intervalle
+            flights_updated = 0
+            
+            for flight in current_flights:
+                try:
+                    flight_updated = False
+                    update_fields = {}
+                    
+                    # Traiter uniquement l'aéroport d'arrivée
+                    arrival_iata = flight.get('to_code', '')
+                    arrival_time_utc = flight.get('arrival', {}).get('scheduled_utc', '')
+                    
+                    if arrival_iata and arrival_iata in iata_icao_mapping and arrival_time_utc:
+                        arrival_icao = iata_icao_mapping[arrival_iata]
+                        
+                        if arrival_icao in tafs_by_station:
+                            # Trouver le TAF forecast qui correspond à l'heure d'arrivée
+                            matching_taf = self._find_matching_taf_forecast(
+                                tafs_by_station[arrival_icao], 
+                                arrival_time_utc
+                            )
+                            
+                            if matching_taf:
+                                update_fields['taf_id'] = matching_taf.get('_id')
+                                flight_updated = True
+                                self.logger.debug(f"Vol {flight.get('_id')}: {arrival_iata} ({arrival_time_utc}) -> TAF {matching_taf.get('_id')}")
+                    
+                    # Mettre à jour le vol si une correspondance a été trouvée
+                    if flight_updated:
+                        # Ajouter les métadonnées d'association
+                        update_fields['_metadata.taf_associated'] = True
+                        update_fields['_metadata.taf_association_date'] = operation_start_time.isoformat()
+                        
+                        flights_collection.update_one(
+                            {"_id": flight["_id"]},
+                            {"$set": update_fields}
+                        )
+                        flights_updated += 1
+                        
+                except Exception as e:
+                    error_msg = f"Erreur lors de l'association TAF du vol {flight.get('_id', 'unknown')}: {e}"
+                    self.logger.warning(error_msg)
+                    results.errors.append(error_msg)
+            
+            self.logger.info(f"✓ {flights_updated} vols mis à jour avec des associations TAF")
+            results.flights_inserted = flights_updated  # Réutilise ce champ pour les vols mis à jour
+            results.success = True
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de l'association vols-TAF: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            results.errors.append(error_msg)
+            
+        finally:
+            self._finalize_collection(results, operation_start_time, "ASSOCIATION VOLS-TAF")
+            
+        return results

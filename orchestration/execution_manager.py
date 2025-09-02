@@ -133,6 +133,7 @@ class ExecutionManager:
         
         success_realtime = success_weather = success_past = False
         results_realtime = results_weather = results_past = None
+        realtime_session_id = None  # Pour stocker le session_id de l'étape 1
         
         # ÉTAPE 1: Collecte vols temps réel
         if self.config.collect_realtime:
@@ -140,7 +141,10 @@ class ExecutionManager:
             try:
                 results_realtime = orchestrator.collect_and_store_realtime_flights()
                 success_realtime = results_realtime.success
+                realtime_session_id = results_realtime.collection_session_id  # Récupérer le session_id
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 1 {'réussie' if success_realtime else 'échouée'}")
+                if realtime_session_id:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}]   → Session ID: {realtime_session_id}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 1: {e}")
             
@@ -168,21 +172,56 @@ class ExecutionManager:
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 3: {e}")
         
+        time.sleep(2)  # Pause entre les étapes
+        
+        # ÉTAPE 4: Association vols-METAR
+        success_association_metar = True
+        if self.config.enable_xml_weather and success_realtime and realtime_session_id:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Association vols-METAR...")
+            try:
+                results_association_metar = orchestrator.associate_flights_with_metar(realtime_session_id)
+                success_association_metar = results_association_metar.success
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 4 {'réussie' if success_association_metar else 'échouée'}")
+            except Exception as e:
+                success_association_metar = False
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 4: {e}")
+        elif self.config.enable_xml_weather and not realtime_session_id:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Ignorée (pas de vols temps réel collectés)")
+        
+        time.sleep(2)  # Pause entre les étapes
+        
+        # ÉTAPE 5: Association vols-TAF
+        success_association_taf = True
+        if self.config.enable_xml_weather and success_realtime and realtime_session_id:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Association vols-TAF...")
+            try:
+                results_association_taf = orchestrator.associate_flights_with_taf(realtime_session_id)
+                success_association_taf = results_association_taf.success
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 5 {'réussie' if success_association_taf else 'échouée'}")
+            except Exception as e:
+                success_association_taf = False
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 5: {e}")
+        elif self.config.enable_xml_weather and not realtime_session_id:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Ignorée (pas de vols temps réel collectés)")
+        
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         
-        # Résumé global des 3 étapes
+        # Résumé global des 5 étapes
         etapes_reussies = []
         if success_realtime: etapes_reussies.append("temps réel")
         if success_weather: etapes_reussies.append("météo")
         if success_past: etapes_reussies.append("vols passés")
+        if success_association_metar and self.config.enable_xml_weather: etapes_reussies.append("association-METAR")
+        if success_association_taf and self.config.enable_xml_weather: etapes_reussies.append("association-TAF")
         
-        if len(etapes_reussies) == 3:
-            status = "✓ succès complet (3/3 étapes)"
+        total_etapes = 5 if self.config.enable_xml_weather else 3
+        if len(etapes_reussies) == total_etapes:
+            status = f"✓ succès complet ({len(etapes_reussies)}/{total_etapes} étapes)"
         elif len(etapes_reussies) > 0:
-            status = f"⚠ succès partiel ({len(etapes_reussies)}/3 étapes: {', '.join(etapes_reussies)})"
+            status = f"⚠ succès partiel ({len(etapes_reussies)}/{total_etapes} étapes: {', '.join(etapes_reussies)})"
         else:
-            status = "✗ échec complet (0/3 étapes)"
+            status = f"✗ échec complet (0/{total_etapes} étapes)"
         
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte complète terminée avec {status} ({duration:.1f}s)")
         print("=" * 80 + "\n")

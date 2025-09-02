@@ -22,11 +22,11 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst_airlines",
+        database_name="dst_airlines_test",
         collection_name="flights",
         
         # Collecte
-        num_airports=200,
+        num_airports=3,
         delay=1.5,
         batch_size=500,
         enable_xml_weather=True,  
@@ -34,7 +34,7 @@ def create_my_config() -> CollectionConfig:
         past_hour_offset=-20,   # Décalage pour vols passés
         
         # Comportement - Modifiez selon vos besoins
-        run_once=False,              # True = une fois, False = en boucle
+        run_once=True,              # True = une fois, False = en boucle
         collect_realtime=True,      # Collecte vols temps réel
         collect_past=True,          # Collecte vols passés
         
