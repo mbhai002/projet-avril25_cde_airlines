@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
+import urllib3
 import time
 import json
 from datetime import datetime, timezone, timedelta
@@ -12,6 +13,9 @@ import pandas as pd
 import pytz
 from utils.flight_html_parser import ParserHtml
 from config.simple_logger import get_logger
+
+# Désactiver les warnings SSL pour ce scraper spécifique
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class FlightDataScraper:
@@ -84,7 +88,7 @@ class FlightDataScraper:
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(self.base_url, headers=self.headers, data=payload, timeout=30)
+                response = requests.post(self.base_url, headers=self.headers, data=payload, timeout=30, verify=False)
                 
                 if response.status_code == 429:  # Too Many Requests
                     if not self._handle_rate_limit(attempt, max_retries):

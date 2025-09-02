@@ -22,7 +22,7 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst_airlines4",
+        database_name="dst_airlines",
         collection_name="flights",
         
         # Collecte

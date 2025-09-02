@@ -1,6 +1,7 @@
 import os
 import gzip
 import requests
+import urllib3
 import xmltodict
 import traceback
 from datetime import datetime
@@ -11,6 +12,9 @@ import sys
 # Ajouter le chemin parent pour les imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.simple_logger import get_logger
+
+# Désactiver les warnings SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class TafXmlCollector:
@@ -59,7 +63,7 @@ class TafXmlCollector:
             self.logger.info(f"Téléchargement depuis {self.TAF_XML_URL}")
             
             # Télécharger le fichier
-            response = requests.get(self.TAF_XML_URL, stream=True, timeout=30)
+            response = requests.get(self.TAF_XML_URL, stream=True, timeout=30, verify=False)
             response.raise_for_status()
             
             # Sauvegarder le fichier compressé

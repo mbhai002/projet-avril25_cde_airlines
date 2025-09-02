@@ -6,6 +6,8 @@ Nous pouvons observer ce site en guise d’exemple.
 Le but de ce projet est de créer un outil permettant de faire des prévisions sur le retard d’un vol ou non.
 
 Commandes utiles :
-python -m venv venv (creates virtual environment)
-venv\Scripts\activate (activates environment on Windows)
+python -m venv .venv (creates virtual environment)
+.venv\Scripts\activate (activates environment on Windows)
 pip install -r requirements.txt (installs packages)
+
+.venv/Scripts/python.exe c:/01_dev_clb/python/projet-avril25_cde_airlines/main.py

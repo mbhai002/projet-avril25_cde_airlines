@@ -687,7 +687,7 @@ LKO;VILK;Asia/Kolkata;5,5;5,5;5,5;Chaudhary Charan Singh Airport;685
 LNZ;LOWL;Europe/Vienna;1;1;2;Linz Airport;686
 BCD;RPVB;Asia/Manila;8;8;8;Bacolod Silay International Airport;687
 EVE;ENEV;Europe/Oslo;1;1;2;Harstad/Narvik Airport, Evenes;688
-ACO;;;;;;;689
+ACO;RKAC;Asia/Seoul;9;9;10;Jeju International Airport;689
 MHT;KMHT;America/New_York;-5;-5;-4;Manchester Airport;690
 PZU;HSPN;Africa/Khartoum;2;2;2;Port Sudan New International Airport;691
 HMO;MMHO;America/Hermosillo;-7;-7;-7;General Ignacio Pesqueira García International Airport;692
@@ -767,7 +767,6 @@ BEL;SBBE;America/Belem;-3;-3;-3;Belém/Val de Cans–Júlio Cezar Ribeiro Intern
 VGO;LEVX;Europe/Madrid;1;1;2;Vigo-Peinador Airport;766
 UTH;VTUD;Asia/Bangkok;7;7;7;Udon Thani International Airport;767
 BEN;HLLB;Africa/Tripoli;2;2;2;Benina International Airport;768
-GOX;;;;;;;769
 PGF;LFMP;Europe/Paris;1;1;2;Perpignan–Rivesaltes Airport;770
 PDG;WIEE;Asia/Jakarta;7;7;7;Minangkabau International Airport;771
 HYA;KHYA;America/New_York;-5;-5;-4;Barnstable Municipal Airport;772
@@ -2139,7 +2138,6 @@ BID;KBID;America/New_York;-5;-5;-4;Block Island State Airport;2137
 BSA;HCMF;Africa/Mogadishu;3;3;3;Bender Qassim International Airport;2138
 CIH;ZBCZ;Asia/Shanghai;8;8;8;Changzhi Wangcun Airport;2139
 FUO;ZGFS;Asia/Shanghai;8;8;8;Foshan Shadi Airport;2140
-JCL;;;;;;;2141
 LSP;SVJC;America/Caracas;-4;-4;-4;Josefa Camejo International Airport;2142
 MJN;FMNM;Indian/Antananarivo;3;3;3;Amborovy Airport;2143
 SLW;MMIO;America/Monterrey;-6;-6;-6;Plan de Guadalupe International Airport;2144
@@ -5309,7 +5307,7 @@ PTT;KPTT;America/Chicago;-6;-6;-5;Pratt Municipal Airport;5307
 PWN;MYCP;America/Nassau;-5;-5;-4;Pitts Town Airport;5308
 PYR;LGAD;Europe/Athens;2;2;3;Andravida Airport;5309
 QCJ;SDBK;America/Sao_Paulo;-3;-3;-3;Botucatu Airport;5310
-QEO;;;;;;;5311
+QEO;SDQN;America/Sao_Paulo;-3;-3;-3;Quissamã Airport;5311
 QIQ;SDRK;America/Sao_Paulo;-3;-3;-3;Rio Claro Airport;5312
 QIY;;;;;;;5313
 QJH;BGQT;America/Nuuk;-2;-2;-1;Qassimiut Heliport;5314
@@ -5402,3 +5400,19 @@ SZP;KSZP;America/Los_Angeles;-8;-8;-7;Santa Paula Airport;5400
 GSE;ESGP;Europe/Stockholm;1;1;2;Gothenburg City Airport;5401
 ARY;YARA;Australia/Melbourne;11;10;10;Ararat Airport;5402
 TLA;PATE;America/Nome;-9;-9;-8;Teller Airport;5403
+ICN;RKSI;Asia/Seoul;9;9;9;Incheon International Airport;5404
+CFU;LGCF;Europe/Athens;2;2;3;Corfu International Airport;5405
+PRG;LKPR;Europe/Prague;1;1;2;Václav Havel Airport Prague;5406
+HAN;VVTS;Asia/Bangkok;7;7;8;Hanoi Airport;5407
+GOX;VIGX;Asia/Bangkok;7;7;8;Gokcen Airport;5408
+SGN;VVTS;Asia/Bangkok;7;7;8;Tan Son Nhat International Airport;5409
+BSZ;VBBS;Asia/Bangkok;7;7;8;Buri Ram Airport;5410
+KSC;VVTS;Asia/Bangkok;7;7;8;Koh Samui Airport;5411
+CJU;RKPC;Asia/Seoul;9;9;9;Jeju International Airport;5412
+PUS;RKPU;Asia/Seoul;9;9;9;Gimhae International Airport;5413
+JCL;RKJC;Asia/Seoul;9;9;9;Jeju International Airport;5414
+STX;RKST;Asia/Seoul;9;9;9;Sacheon Airport;5415
+ABJ;DIAB;Africa/Abidjan;0;0;0;Felix Houphouet-Boigny Airport;5416
+BZV;FCBB;Africa/Brazzaville;1;1;1;Maya-Maya Airport;5417
+QTT;;;;;;;5418
+MDO;PAMD;America/Anchorage;-9;-9;-8;Middleton Island Airport;5419
