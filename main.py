@@ -26,7 +26,7 @@ def create_my_config() -> CollectionConfig:
         collection_name="flights",
         
         # Collecte
-        num_airports=3,
+        num_airports=100,
         delay=1.5,
         batch_size=500,
         enable_xml_weather=True,  

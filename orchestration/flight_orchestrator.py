@@ -16,6 +16,7 @@ from data.flight_data_scrapper import FlightDataScraper
 from data.metar_xml_collector import MetarXmlCollector
 from data.taf_xml_collector import TafXmlCollector
 from utils.mongodb_manager import MongoDBManager
+from utils.postgresql_manager import PostgreSQLManager
 from config.simple_logger import get_logger, log_operation_time, log_database_operation
 from config.collection_config import CollectionConfig, CollectionResults, CollectionType
 
@@ -47,19 +48,29 @@ class FlightOrchestrator:
         else:
             self.metar_xml_collector = None
             self.taf_xml_collector = None
+            
+        # Initialiser le gestionnaire PostgreSQL si activé
+        if config.enable_postgresql_insertion:
+            self.pg_manager = PostgreSQLManager(config.postgresql_uri)
+        else:
+            self.pg_manager = None
         
         self.logger.info(f"FlightOrchestrator initialized - Database: {config.database_name}, "
                         f"Collection: {config.collection_name}, Weather: {config.enable_xml_weather}")
     
-    def collect_and_store_realtime_flights(self) -> CollectionResults:
+    def collect_and_store_realtime_flights(self, session_id: str = None) -> CollectionResults:
         """
         ÉTAPE 1: Collecte et stocke les vols temps réel
+        
+        Args:
+            session_id: Session ID à utiliser (si None, en génère un automatiquement)
         
         Returns:
             Résultats de l'opération
         """
         operation_start_time = datetime.now()
-        session_id = f"realtime_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
+        if session_id is None:
+            session_id = f"{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
         
         results = CollectionResults(
             collection_session_id=session_id,
@@ -90,7 +101,7 @@ class FlightOrchestrator:
             results.errors.append(error_msg)
             
         finally:
-            self._finalize_collection(results, operation_start_time, "VOLS TEMPS RÉEL")
+            self.mongo_manager.disconnect()
             
         return results
     
@@ -132,19 +143,23 @@ class FlightOrchestrator:
             results.errors.append(error_msg)
             
         finally:
-            self._finalize_collection(results, operation_start_time, "DONNÉES MÉTÉO")
+            self.mongo_manager.disconnect()
             
         return results
     
-    def collect_and_store_past_flights(self) -> CollectionResults:
+    def collect_and_store_past_flights(self, realtime_session_id: str) -> CollectionResults:
         """
         ÉTAPE 3: Collecte et stocke les vols passés
+        
+        Args:
+            realtime_session_id: Session ID des vols temps réel pour liaison (obligatoire)
         
         Returns:
             Résultats de l'opération
         """
         operation_start_time = datetime.now()
-        session_id = f"past_{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
+        # Utiliser le même session_id que les vols temps réel pour lier les données
+        session_id = realtime_session_id
         
         results = CollectionResults(
             collection_session_id=session_id,
@@ -154,6 +169,7 @@ class FlightOrchestrator:
         self.logger.info("=== ÉTAPE 3: COLLECTE VOLS PASSÉS ===")
         self.logger.info(f"Session ID: {session_id}")
         self.logger.info(f"Paramètres: {self.config.num_airports} aéroports, offset {self.config.past_hour_offset}h")
+        self.logger.info(f"Lié à la session temps réel: {realtime_session_id}")
         
         try:
             # Connexion MongoDB
@@ -166,7 +182,7 @@ class FlightOrchestrator:
                 results.success = True
                 return results
             
-            # Insertion en base (avec upsert)
+            # Insertion en base (avec upsert) - associer au session_id temps réel
             self._insert_flights(results, flights, session_id, CollectionType.PAST, is_past=True)
             
         except Exception as e:
@@ -175,7 +191,7 @@ class FlightOrchestrator:
             results.errors.append(error_msg)
             
         finally:
-            self._finalize_collection(results, operation_start_time, "VOLS PASSÉS")
+            self.mongo_manager.disconnect()
             
         return results
     
@@ -319,31 +335,6 @@ class FlightOrchestrator:
                 results.success = True
                 self.logger.info("Partial success: weather data collected despite flight insertion error")
     
-    def _finalize_collection(self, results: CollectionResults, start_time: datetime, description: str):
-        """Finalise la collecte"""
-        self.mongo_manager.disconnect()
-        
-        end_time = datetime.now()
-        results.end_time = end_time.isoformat()
-        results.duration_seconds = (end_time - start_time).total_seconds()
-        
-        # Log final
-        self.logger.info(f"=== COLLECTION {description} TERMINÉE ===")
-        self.logger.info(f"Session: {results.collection_session_id}, Success: {results.success}, "
-                        f"Duration: {results.duration_seconds:.1f}s")
-        
-        # Log spécifique selon le type
-        if "MÉTÉO" in description:
-            self.logger.info(f"METAR: {results.metar_xml_collected}/{results.metar_xml_inserted}, "
-                           f"TAF: {results.taf_xml_collected}/{results.taf_xml_inserted}")
-        else:
-            self.logger.info(f"Vols: {results.flights_collected}/{results.flights_inserted}")
-        
-        if results.errors:
-            self.logger.warning(f"Collection terminée avec {len(results.errors)} erreurs")
-            for error in results.errors[:3]:
-                self.logger.warning(f"Error: {error}")
-    
     def _prepare_flights_for_mongodb(self, flights: List[Dict], session_id: str, 
                                    collection_type: CollectionType) -> List[Dict]:
         """Prépare les données de vol pour l'insertion MongoDB"""
@@ -353,7 +344,7 @@ class FlightOrchestrator:
         for flight in flights:
             # Ajouter des métadonnées d'import
             flight_doc = flight.copy()
-            flight_doc['_metadata'] = {
+            metadata = {
                 'collection_type': collection_type.value,
                 'collected_at': current_time.isoformat(),
                 'source': self.config.source,
@@ -361,7 +352,10 @@ class FlightOrchestrator:
                 'collection_session_id': session_id,
                 'is_updated': False,
                 'update_count': 0
-            }
+            }     
+            
+            
+            flight_doc['_metadata'] = metadata
             
             # Ajouter un ID unique basé sur le vol et l'heure de collecte
             flight_doc['_id'] = self._generate_flight_id(flight, current_time)
@@ -609,13 +603,13 @@ class FlightOrchestrator:
         except Exception as e:
             self.logger.warning(f"Erreur lors de la création des index {data_type}: {e}")
 
-    def associate_flights_with_metar(self, target_session_id: str = None) -> CollectionResults:
+    def associate_flights_with_metar(self, realtime_session_id: str) -> CollectionResults:
         """
         ÉTAPE 4: Associe les données de vols avec les données METAR
         Ajoute un champ metar_id à chaque vol quand il y a correspondance ICAO/IATA
         
         Args:
-            target_session_id: Session ID spécifique des vols à traiter (optionnel)
+            realtime_session_id: Session ID des vols temps réel à traiter (obligatoire)
         
         Returns:
             Résultats de l'opération
@@ -630,8 +624,7 @@ class FlightOrchestrator:
         
         self.logger.info("=== ÉTAPE 4: ASSOCIATION VOLS-METAR ===")
         self.logger.info(f"Session ID: {session_id}")
-        if target_session_id:
-            self.logger.info(f"Filtrage sur session de vols: {target_session_id}")
+        self.logger.info(f"Filtrage sur session de vols: {realtime_session_id}")
         
         try:
             # Connexion MongoDB
@@ -652,18 +645,12 @@ class FlightOrchestrator:
             metar_collection = self.mongo_manager.database["weather_metar_xml"]
             
             # Construire le filtre pour les vols
-            flights_filter = {}
-            if target_session_id:
-                flights_filter["_metadata.collection_session_id"] = target_session_id
-                self.logger.info(f"Recherche des vols avec session_id: {target_session_id}")
-            else:
-                # Trouver toutes les sessions de collecte de la journée courante (comportement par défaut)
-                today_str = operation_start_time.strftime('%Y%m%d')
-                flights_filter["_metadata.collection_session_id"] = {"$regex": f"^realtime_{today_str}"}
-                self.logger.info(f"Recherche des vols de la journée: {today_str}")
-            
-            # Exclure les vols avec operated_by (doublons code-share)
-            flights_filter["operated_by"] = {"$exists": False}
+            flights_filter = {
+                "_metadata.collection_session_id": realtime_session_id,
+                "_metadata.collection_type": "realtime_departures",
+                "operated_by": {"$exists": False}  # Exclure les vols avec operated_by (doublons code-share)
+            }
+            self.logger.info(f"Recherche des vols avec session_id: {realtime_session_id}")
             
             # Compter les vols à traiter
             total_flights = flights_collection.count_documents(flights_filter)
@@ -760,7 +747,7 @@ class FlightOrchestrator:
             results.errors.append(error_msg)
             
         finally:
-            self._finalize_collection(results, operation_start_time, "ASSOCIATION VOLS-METAR")
+            self.mongo_manager.disconnect()
             
         return results
     
@@ -912,13 +899,13 @@ class FlightOrchestrator:
             self.logger.error(f"Erreur lors de la recherche TAF pour {arrival_time_utc}: {e}")
             return None
 
-    def associate_flights_with_taf(self, target_session_id: str = None) -> CollectionResults:
+    def associate_flights_with_taf(self, realtime_session_id: str) -> CollectionResults:
         """
         ÉTAPE 5: Associe les données de vols avec les données TAF
         Ajoute un champ taf_id aux vols pour l'aéroport d'arrivée quand il y a correspondance ICAO/IATA
         
         Args:
-            target_session_id: Session ID spécifique des vols à traiter (optionnel)
+            realtime_session_id: Session ID des vols temps réel à traiter (obligatoire)
         
         Returns:
             Résultats de l'opération
@@ -933,8 +920,7 @@ class FlightOrchestrator:
         
         self.logger.info("=== ÉTAPE 5: ASSOCIATION VOLS-TAF ===")
         self.logger.info(f"Session ID: {session_id}")
-        if target_session_id:
-            self.logger.info(f"Filtrage sur session de vols: {target_session_id}")
+        self.logger.info(f"Filtrage sur session de vols: {realtime_session_id}")
         
         try:
             # Connexion MongoDB
@@ -955,18 +941,12 @@ class FlightOrchestrator:
             taf_collection = self.mongo_manager.database["weather_taf_xml"]
             
             # Construire le filtre pour les vols
-            flights_filter = {}
-            if target_session_id:
-                flights_filter["_metadata.collection_session_id"] = target_session_id
-                self.logger.info(f"Recherche des vols avec session_id: {target_session_id}")
-            else:
-                # Trouver toutes les sessions de collecte de la journée courante (comportement par défaut)
-                today_str = operation_start_time.strftime('%Y%m%d')
-                flights_filter["_metadata.collection_session_id"] = {"$regex": f"^realtime_{today_str}"}
-                self.logger.info(f"Recherche des vols de la journée: {today_str}")
-            
-            # Exclure les vols avec operated_by (doublons code-share)
-            flights_filter["operated_by"] = {"$exists": False}
+            flights_filter = {
+                "_metadata.collection_session_id": realtime_session_id,
+                "_metadata.collection_type": "realtime_departures",
+                "operated_by": {"$exists": False}  # Exclure les vols avec operated_by (doublons code-share)
+            }
+            self.logger.info(f"Recherche des vols avec session_id: {realtime_session_id}")
             
             # Compter les vols à traiter
             total_flights = flights_collection.count_documents(flights_filter)
@@ -1071,6 +1051,180 @@ class FlightOrchestrator:
             results.errors.append(error_msg)
             
         finally:
-            self._finalize_collection(results, operation_start_time, "ASSOCIATION VOLS-TAF")
+            self.mongo_manager.disconnect()
+            
+        return results
+    
+    def insert_weather_and_flight_data_to_postgres(self, session_id: str) -> CollectionResults:
+        """
+        ÉTAPE 6: Insère les données METAR/TAF associées dans PostgreSQL
+        
+        Args:
+            session_id: Session ID des vols temps réel à traiter
+        
+        Returns:
+            Résultats de l'opération
+        """
+        operation_start_time = datetime.now()
+        
+        results = CollectionResults(
+            collection_session_id=session_id,
+            start_time=operation_start_time.isoformat()
+        )
+        
+        self.logger.info("=== ÉTAPE 6: INSERTION POSTGRESQL ===")
+        self.logger.info(f"Session ID: {session_id}")
+        
+        if not self.config.enable_postgresql_insertion or not self.pg_manager:
+            self.logger.warning("Insertion PostgreSQL désactivée")
+            results.success = True
+            return results
+        
+        try:
+            # Connexion MongoDB et PostgreSQL
+            if not self._connect_to_mongodb(results) or not self.pg_manager.connect():
+                return results
+            
+            # Obtenir les collections
+            flights_collection = self.mongo_manager.database[self.config.collection_name]
+            metar_collection = self.mongo_manager.database["weather_metar_xml"]
+            taf_collection = self.mongo_manager.database["weather_taf_xml"]
+            
+            # 1. Récupérer les IDs METAR et TAF des vols associés
+            flights_filter = {
+                "_metadata.collection_session_id": session_id,
+                "_metadata.collection_type": "realtime_departures",
+                "$and": [
+                    {"_metadata.metar_associated": True},
+                    {"_metadata.taf_associated": True}
+                ],
+                "operated_by": {"$exists": False}
+            }
+            
+            self.logger.info(f"Recherche des vols associés pour la session: {session_id}")
+            
+            associated_flights = list(flights_collection.find(
+                flights_filter,
+                {"metar_id": 1, "taf_id": 1, "_id": 0}  # Projection
+            ))
+            
+            if not associated_flights:
+                self.logger.info("Aucun vol avec METAR/TAF associé trouvé pour cette session")
+                results.success = True
+                return results
+            
+            metar_ids = {f.get('metar_id') for f in associated_flights if f.get('metar_id')}
+            taf_ids = {f.get('taf_id') for f in associated_flights if f.get('taf_id')}
+            
+            self.logger.info(f"{len(metar_ids)} METARs et {len(taf_ids)} TAFs à insérer dans PostgreSQL")
+            
+            # 2. Insérer les données METAR
+            if metar_ids:
+                metar_docs = list(metar_collection.find({"_id": {"$in": list(metar_ids)}}))
+                if metar_docs:
+                    inserted_metar = self.pg_manager.insert_metar_batch(metar_docs)
+                    self.logger.info(f"{inserted_metar}/{len(metar_docs)} METARs insérés")
+            
+            # 3. Insérer les données TAF
+            if taf_ids:
+                taf_docs = list(taf_collection.find({"_id": {"$in": list(taf_ids)}}))
+                if taf_docs:
+                    inserted_taf = self.pg_manager.insert_taf_batch(taf_docs)
+                    self.logger.info(f"{inserted_taf}/{len(taf_docs)} TAFs insérés")
+            
+            # 4. Insérer les vols de la session (sans operated_by)
+            flights_session = list(flights_collection.find({
+                "_metadata.collection_session_id": session_id,
+                "_metadata.collection_type": "realtime_departures",
+                "operated_by": {"$exists": False},
+                "$and": [
+                    {"_metadata.metar_associated": True},
+                    {"_metadata.taf_associated": True}
+                ]
+            }))
+            
+            if flights_session:
+                inserted_flights = self.pg_manager.insert_flights_batch(flights_session)
+                self.logger.info(f"{inserted_flights} vols insérés dans PostgreSQL")
+            
+            results.success = True
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de l'insertion PostgreSQL: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            results.errors.append(error_msg)
+            
+        finally:
+            self.pg_manager.disconnect()
+            self.mongo_manager.disconnect()
+            
+        return results
+    
+    def update_flights_data_to_postgres(self, session_id: str) -> CollectionResults:
+        """
+        ÉTAPE 7: Met à jour PostgreSQL avec les données réelles des vols passés
+        
+        Args:
+            session_id: Session ID global à traiter (même que realtime_session_id)
+        
+        Returns:
+            Résultats de l'opération
+        """
+        operation_start_time = datetime.now()
+        
+        results = CollectionResults(
+            collection_session_id=session_id,
+            start_time=operation_start_time.isoformat()
+        )
+        
+        self.logger.info("=== ÉTAPE 7: MISE À JOUR POSTGRESQL ===")
+        self.logger.info(f"Session ID: {session_id}")
+        
+        if not self.config.enable_postgresql_insertion or not self.pg_manager:
+            self.logger.warning("Insertion PostgreSQL désactivée")
+            results.success = True
+            return results
+        
+        try:
+            # Connexion MongoDB et PostgreSQL
+            if not self._connect_to_mongodb(results) or not self.pg_manager.connect():
+                return results
+            
+            # Obtenir la collection des vols
+            flights_collection = self.mongo_manager.database[self.config.collection_name]
+            
+            # 1. Récupérer les vols passés (type PAST) de la session
+            flights_filter = {
+                "_metadata.collection_session_id": session_id,
+                "_metadata.collection_type": "past_departures",  # Ne récupérer que les vols passés
+                "operated_by": {"$exists": False}
+            }
+            
+            self.logger.info(f"Recherche des vols passés pour la session: {session_id}")
+            
+            past_flights = list(flights_collection.find(flights_filter))
+            
+            if not past_flights:
+                self.logger.info("Aucun vol passé lié à une session temps réel trouvé")
+                results.success = True
+                return results
+            
+            self.logger.info(f"{len(past_flights)} vols passés trouvés pour mise à jour PostgreSQL")
+            
+            # 2. Mettre à jour PostgreSQL avec les données réelles
+            updated_count = self.pg_manager.update_flights_batch(past_flights)
+            self.logger.info(f"{updated_count} vols mis à jour dans PostgreSQL")
+            
+            results.flights_inserted = updated_count  # Réutilise ce champ pour les vols mis à jour
+            results.success = True
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de la mise à jour PostgreSQL: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            results.errors.append(error_msg)
+            
+        finally:
+            self.pg_manager.disconnect()
+            self.mongo_manager.disconnect()
             
         return results

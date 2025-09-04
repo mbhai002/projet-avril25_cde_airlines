@@ -19,8 +19,12 @@ class CollectionConfig:
     """Configuration complète pour une collecte"""
     # Base de données
     mongodb_uri: str = "mongodb://localhost:27017/"
-    database_name: str = "dst_airlines3"
+    database_name: str = "dst_airlines_test"
     collection_name: str = "flights"
+    
+    # PostgreSQL
+    enable_postgresql_insertion: bool = True
+    postgresql_uri: str = "postgresql://postgres:cdps%40973@localhost:5433/dst"
     
     # Collecte
     num_airports: int = 200
