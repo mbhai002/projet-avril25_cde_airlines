@@ -58,20 +58,18 @@ class FlightOrchestrator:
         self.logger.info(f"FlightOrchestrator initialized - Database: {config.database_name}, "
                         f"Collection: {config.collection_name}, Weather: {config.enable_xml_weather}")
     
-    def collect_and_store_realtime_flights(self, session_id: str = None) -> CollectionResults:
+    def collect_and_store_realtime_flights(self, session_id) -> CollectionResults:
         """
         ÉTAPE 1: Collecte et stocke les vols temps réel
         
         Args:
-            session_id: Session ID à utiliser (si None, en génère un automatiquement)
+            session_id: Session ID à utiliser
         
         Returns:
             Résultats de l'opération
         """
         operation_start_time = datetime.now()
-        if session_id is None:
-            session_id = f"{operation_start_time.strftime('%Y%m%d_%H%M%S')}_{operation_start_time.microsecond // 1000:03d}"
-        
+       
         results = CollectionResults(
             collection_session_id=session_id,
             start_time=operation_start_time.isoformat()

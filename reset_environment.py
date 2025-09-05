@@ -6,7 +6,6 @@ Supprime la base MongoDB et truncate les tables PostgreSQL
 
 import sys
 import os
-from pymongo import MongoClient
 import psycopg2
 from datetime import datetime
 
@@ -14,6 +13,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config.collection_config import CollectionConfig
+from utils.mongodb_manager import MongoDBManager
 
 
 def reset_mongodb(config: CollectionConfig):
@@ -21,21 +21,25 @@ def reset_mongodb(config: CollectionConfig):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🗑️  Réinitialisation MongoDB...")
     
     try:
-        # Connexion MongoDB
-        client = MongoClient(config.mongodb_uri)
+        # Connexion MongoDB avec le manager
+        mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
+        
+        if not mongo_manager.connect():
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Impossible de se connecter à MongoDB")
+            return False
         
         # Lister les bases existantes
-        databases = client.list_database_names()
+        databases = mongo_manager.client.list_database_names()
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Bases MongoDB existantes: {databases}")
         
         if config.database_name in databases:
             # Supprimer la base complète
-            client.drop_database(config.database_name)
+            mongo_manager.client.drop_database(config.database_name)
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Base '{config.database_name}' supprimée avec succès")
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ℹ️  Base '{config.database_name}' n'existe pas")
         
-        client.close()
+        mongo_manager.disconnect()
         
     except Exception as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Erreur MongoDB: {e}")

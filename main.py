@@ -24,22 +24,26 @@ def create_my_config() -> CollectionConfig:
         mongodb_uri="mongodb://localhost:27017/",
         database_name="dst_airlines_test",
         collection_name="flights",
-        
+
+        # PostgreSQL
+        enable_postgresql_insertion = True,
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst",
+
         # Collecte
-        num_airports=100,
+        num_airports=200,
         delay=1.5,
         batch_size=500,
         enable_xml_weather=True,  
         hour_offset=1,          # Décalage pour vols temps réel
-        past_hour_offset=-20,   # Décalage pour vols passés
+        past_hour_offset=-6,   # Décalage pour vols passés
         
         # Comportement - Modifiez selon vos besoins
-        run_once=True,              # True = une fois, False = en boucle
+        run_once=False,              # True = une fois, False = en boucle
         collect_realtime=True,      # Collecte vols temps réel
         collect_past=True,          # Collecte vols passés
         
         # Scheduling (si run_once=False)
-        schedule_minute=5,          # XX:05
+        schedule_minute=6,          # XX:05
         loop_interval_minutes=60,   # Toutes les heures
         
         # Logging

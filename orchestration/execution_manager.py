@@ -11,7 +11,7 @@ import time
 # Ajouter le répertoire du projet au path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.collection_config import CollectionConfig, CollectionType
+from config.collection_config import CollectionConfig
 from config.simple_logger import get_logger
 from orchestration.flight_orchestrator import FlightOrchestrator
 
@@ -42,36 +42,15 @@ class ExecutionManager:
             self._run_loop()
     
     def _run_single(self):
-        """Exécute une collecte unique selon la configuration"""
-        if self.config.collect_realtime and self.config.collect_past:
-            print("=== COLLECTE UNIQUE - Vols temps réel + passés ===")
-            self._execute_combined_collection()
-        elif self.config.collect_past:
-            print("=== COLLECTE UNIQUE - Vols passés ===")
-            success = self._execute_single_collection(CollectionType.PAST)
-            exit(0 if success else 1)
-        else:
-            print("=== COLLECTE UNIQUE - Vols temps réel ===")
-            success = self._execute_single_collection(CollectionType.REALTIME)
-            exit(0 if success else 1)
+        """Exécute une collecte unique complète (7 étapes)"""
+        print("=== COLLECTE UNIQUE - Workflow complet (7 étapes) ===")
+        self._execute_complete_workflow()
     
     def _run_loop(self):
-        """Exécute en boucle selon la configuration"""
-        if self.config.collect_realtime and self.config.collect_past:
-            print("=== MODE BOUCLE - Vols temps réel + passés ===")
-            self._run_combined_loop()
-        elif self.config.collect_past:
-            print("=== MODE BOUCLE - Vols passés ===")
-            self._run_simple_loop(CollectionType.PAST)
-        else:
-            print("=== MODE BOUCLE - Vols temps réel ===")
-            self._run_simple_loop(CollectionType.REALTIME)
-    
-    def _run_simple_loop(self, collection_type: CollectionType):
-        """Exécute en boucle simple pour un type de collecte"""
-        mode_desc = "VOLS PASSÉS" if collection_type == CollectionType.PAST else "VOLS TEMPS RÉEL"
-        
+        """Exécute en boucle le workflow complet (7 étapes)"""
+        print("=== MODE BOUCLE - Collecte complète (7 étapes) ===")
         print(f"Exécution toutes les {self.config.loop_interval_minutes} minutes à XX:{self.config.schedule_minute:02d}")
+        print("Collecte les vols temps réel ET les vols passés à chaque exécution")
         print("Appuyez sur Ctrl+C pour arrêter\n")
         
         try:
@@ -84,47 +63,14 @@ class ExecutionManager:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
                 time.sleep(wait_seconds)
                 
-                # Exécuter la collecte
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte {mode_desc.lower()}...")
-                start_time = datetime.now()
-                
-                success = self._execute_single_collection(collection_type)
-                
-                end_time = datetime.now()
-                duration = (end_time - start_time).total_seconds()
-                
-                status = "✓ succès" if success else "✗ erreurs"
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte {mode_desc.lower()} terminée avec {status} ({duration:.1f}s)")
-                print("=" * 60 + "\n")
+                # Exécuter le workflow complet
+                self._execute_complete_workflow()
                 
         except KeyboardInterrupt:
             print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
             print("Collecteur arrêté.")
     
-    def _run_combined_loop(self):
-        """Exécute en boucle combinée (temps réel + passés)"""
-        print(f"Exécution toutes les {self.config.loop_interval_minutes} minutes à XX:{self.config.schedule_minute:02d}")
-        print("Collecte les vols temps réel ET les vols passés à chaque exécution")
-        print("Appuyez sur Ctrl+C pour arrêter\n")
-        
-        try:
-            while True:
-                # Calculer la prochaine exécution
-                next_run = self._calculate_next_run(self.config.schedule_minute, self.config.loop_interval_minutes)
-                wait_seconds = (next_run - datetime.now()).total_seconds()
-                
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Prochaine exécution combinée prévue à {next_run.strftime('%H:%M:%S')}")
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
-                time.sleep(wait_seconds)
-                
-                # Exécuter la collecte combinée
-                self._execute_combined_collection()
-                
-        except KeyboardInterrupt:
-            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
-            print("Collecteur arrêté.")
-    
-    def _execute_combined_collection(self):
+    def _execute_complete_workflow(self):
         """Exécute une collecte combinée - LES 7 ÉTAPES AVEC SESSION_ID GLOBAL"""
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte COMPLÈTE (7 étapes)...")
         start_time = datetime.now()
@@ -135,16 +81,15 @@ class ExecutionManager:
         
         orchestrator = FlightOrchestrator(self.config)
         
-        success_realtime = success_weather = success_past = False
-        results_realtime = results_weather = results_past = None
+        results_realtime = results_weather = results_past =  None
+        results_association_metar = results_association_taf = results_postgres = results_update = None
         
         # ÉTAPE 1: Collecte vols temps réel
         if self.config.collect_realtime:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 1: Collecte vols temps réel...")
             try:
                 results_realtime = orchestrator.collect_and_store_realtime_flights(global_session_id)
-                success_realtime = results_realtime.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 1 {'réussie' if success_realtime else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 1 {'réussie' if results_realtime.success else 'échouée'}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 1: {e}")
             
@@ -155,8 +100,7 @@ class ExecutionManager:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 2: Collecte données météorologiques...")
             try:
                 results_weather = orchestrator.collect_and_store_weather_data()
-                success_weather = results_weather.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 2 {'réussie' if success_weather else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 2 {'réussie' if results_weather.success else 'échouée'}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 2: {e}")
             
@@ -168,23 +112,19 @@ class ExecutionManager:
             try:
                 # Passer le global_session_id pour lier les vols passés aux vols temps réel
                 results_past = orchestrator.collect_and_store_past_flights(global_session_id)
-                success_past = results_past.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 3 {'réussie' if success_past else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 3 {'réussie' if results_past.success else 'échouée'}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 3: {e}")
         
         time.sleep(2)  # Pause entre les étapes
         
         # ÉTAPE 4: Association vols-METAR
-        success_association_metar = True
-        if self.config.enable_xml_weather and success_realtime and global_session_id:
+        if self.config.enable_xml_weather and results_realtime and results_realtime.success and global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Association vols-METAR...")
             try:
                 results_association_metar = orchestrator.associate_flights_with_metar(global_session_id)
-                success_association_metar = results_association_metar.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 4 {'réussie' if success_association_metar else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 4 {'réussie' if results_association_metar.success else 'échouée'}")
             except Exception as e:
-                success_association_metar = False
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 4: {e}")
         elif self.config.enable_xml_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Ignorée (pas de vols temps réel collectés)")
@@ -192,15 +132,12 @@ class ExecutionManager:
         time.sleep(2)  # Pause entre les étapes
         
         # ÉTAPE 5: Association vols-TAF
-        success_association_taf = True
-        if self.config.enable_xml_weather and success_realtime and global_session_id:
+        if self.config.enable_xml_weather and results_realtime and results_realtime.success and global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Association vols-TAF...")
             try:
                 results_association_taf = orchestrator.associate_flights_with_taf(global_session_id)
-                success_association_taf = results_association_taf.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 5 {'réussie' if success_association_taf else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 5 {'réussie' if results_association_taf.success else 'échouée'}")
             except Exception as e:
-                success_association_taf = False
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 5: {e}")
         elif self.config.enable_xml_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Ignorée (pas de vols temps réel collectés)")
@@ -208,15 +145,12 @@ class ExecutionManager:
         time.sleep(2)
 
         # ÉTAPE 6: Insertion des données météo et des vols dans PostgreSQL
-        success_postgres_insertion = True
-        if self.config.enable_postgresql_insertion and global_session_id and (success_association_metar or success_association_taf):
+        if self.config.enable_postgresql_insertion and global_session_id and ((results_association_metar and results_association_metar.success) or (results_association_taf and results_association_taf.success)):
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6: Insertion données météo et vols dans PostgreSQL...")
             try:
                 results_postgres = orchestrator.insert_weather_and_flight_data_to_postgres(global_session_id)
-                success_postgres_insertion = results_postgres.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 6 {'réussie' if success_postgres_insertion else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 6 {'réussie' if results_postgres.success else 'échouée'}")
             except Exception as e:
-                success_postgres_insertion = False
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 6: {e}")
         elif self.config.enable_postgresql_insertion:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6: Ignorée (pas de session de vols ou d'association réussie)")
@@ -224,15 +158,12 @@ class ExecutionManager:
         time.sleep(2)
 
         # ÉTAPE 7: Mise à jour des vols dans PostgreSQL avec les données passées
-        success_postgres_update = True
-        if self.config.enable_postgresql_insertion and global_session_id and success_past:
+        if self.config.enable_postgresql_insertion and global_session_id and results_past and results_past.success:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Mise à jour vols PostgreSQL avec données passées...")
             try:
                 results_update = orchestrator.update_flights_data_to_postgres(global_session_id)
-                success_postgres_update = results_update.success
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 7 {'réussie' if success_postgres_update else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 7 {'réussie' if results_update.success else 'échouée'}")
             except Exception as e:
-                success_postgres_update = False
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 7: {e}")
         elif self.config.enable_postgresql_insertion:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Ignorée (pas de session de vols ou pas de vols passés collectés)")
@@ -242,13 +173,13 @@ class ExecutionManager:
         
         # Résumé global des 7 étapes
         etapes_reussies = []
-        if success_realtime: etapes_reussies.append("temps réel")
-        if success_weather: etapes_reussies.append("météo")
-        if success_past: etapes_reussies.append("vols passés")
-        if success_association_metar and self.config.enable_xml_weather: etapes_reussies.append("association-METAR")
-        if success_association_taf and self.config.enable_xml_weather: etapes_reussies.append("association-TAF")
-        if success_postgres_insertion and self.config.enable_postgresql_insertion: etapes_reussies.append("insertion-PostgreSQL")
-        if success_postgres_update and self.config.enable_postgresql_insertion: etapes_reussies.append("mise à jour-PostgreSQL")
+        if results_realtime and results_realtime.success: etapes_reussies.append("temps réel")
+        if results_weather and results_weather.success: etapes_reussies.append("météo")
+        if results_past and results_past.success: etapes_reussies.append("vols passés")
+        if results_association_metar and results_association_metar.success and self.config.enable_xml_weather: etapes_reussies.append("association-METAR")
+        if results_association_taf and results_association_taf.success and self.config.enable_xml_weather: etapes_reussies.append("association-TAF")
+        if results_postgres and results_postgres.success and self.config.enable_postgresql_insertion: etapes_reussies.append("insertion-PostgreSQL")
+        if results_update and results_update.success and self.config.enable_postgresql_insertion: etapes_reussies.append("mise à jour des vols passés-PostgreSQL")
 
         total_etapes = 3  # Étapes de base (temps réel, météo, vols passés)
         if self.config.enable_xml_weather:
@@ -284,27 +215,3 @@ class ExecutionManager:
             next_run += timedelta(minutes=interval_minutes)
         
         return next_run
-    
-    def _execute_single_collection(self, collection_type: CollectionType) -> bool:
-        """
-        Exécute une collecte unique et retourne le succès
-        
-        Args:
-            collection_type: Type de collecte à exécuter
-            
-        Returns:
-            True si succès, False sinon
-        """
-        try:
-            orchestrator = FlightOrchestrator(self.config)
-            
-            if collection_type == CollectionType.REALTIME:
-                results = orchestrator.collect_and_store_realtime_flights()
-            else:
-                results = orchestrator.collect_and_store_past_flights()
-            
-            return results.success
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la collecte {collection_type.value}: {e}")
-            return False

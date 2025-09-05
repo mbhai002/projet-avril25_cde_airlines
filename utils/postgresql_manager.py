@@ -692,7 +692,7 @@ class PostgreSQLManager:
                             flight_doc.get('departure', {}).get('scheduled_utc')
                         ),
                         'status': flight_doc.get('status'),
-                        'delay_min': flight_doc.get('delay', {}).get('minutes')
+                        'delay_min': flight_doc.get('arrival', {}).get('delay', {}).get('minutes')
                     }
                     
                     # Vérifier que nous avons les données nécessaires
