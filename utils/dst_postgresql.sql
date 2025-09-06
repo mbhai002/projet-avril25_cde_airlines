@@ -6,13 +6,19 @@ CREATE TABLE flight (
     airline_code VARCHAR(10),
     aircraft_code VARCHAR(10),
 
-    departure_metar TEXT,
+    -- Stockage temporaire des IDs MongoDB pour le mapping
+    departure_metar_external_id TEXT,    -- ID MongoDB du METAR
+    arrival_taf_external_id TEXT,        -- ID MongoDB du TAF
+    
+    -- Clés étrangères courtes (remplies après mapping)
+    departure_metar_fk BIGINT,           -- Référence vers metar(id)
+    arrival_taf_fk BIGINT,               -- Référence vers taf(id)
+    
     departure_scheduled_utc TIMESTAMP WITHOUT TIME ZONE,
     departure_actual_utc TIMESTAMP WITHOUT TIME ZONE,
     departure_terminal VARCHAR(10),
     departure_gate VARCHAR(10),
 
-    arrival_taf TEXT,
     arrival_scheduled_utc TIMESTAMP WITHOUT TIME ZONE,
     arrival_actual_utc TIMESTAMP WITHOUT TIME ZONE,
     arrival_terminal VARCHAR(10),
@@ -26,7 +32,8 @@ CREATE TABLE flight (
 
 
 CREATE TABLE metar (
-    metar_id VARCHAR(25) PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,               -- Clé primaire courte
+    external_id TEXT UNIQUE NOT NULL,       -- ID MongoDB original
     observation_time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     raw_text TEXT NOT NULL,
     station_id VARCHAR(10) NOT NULL,
@@ -57,7 +64,8 @@ CREATE TABLE metar (
 
 
 CREATE TABLE taf (
-    id VARCHAR(72) PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,               -- Clé primaire courte
+    external_id TEXT UNIQUE NOT NULL,       -- ID MongoDB original
     station_id VARCHAR(10) NOT NULL, -- code ICAO
     issue_time TIMESTAMP WITHOUT TIME ZONE NOT NULL,   -- moment d’émission
     bulletin_time TIMESTAMP WITHOUT TIME ZONE,         -- timestamp bulletin brut
@@ -92,19 +100,24 @@ CREATE TABLE taf (
 
 CREATE TABLE sky_condition (
     id BIGSERIAL PRIMARY KEY,
-    metar_id VARCHAR(25),
-    taf_id VARCHAR(72),
+    metar_fk BIGINT,                        -- Référence vers metar(id)
+    taf_fk BIGINT,                          -- Référence vers taf(id)
     sky_cover VARCHAR(50) NOT NULL,
     cloud_base_ft_agl INTEGER,
     cloud_type VARCHAR(50),
     condition_order SMALLINT NOT NULL, -- ordre de la condition (1, 2, 3, 4)
     
-    FOREIGN KEY (metar_id) REFERENCES metar(metar_id) ON DELETE CASCADE,
-    FOREIGN KEY (taf_id) REFERENCES taf(id) ON DELETE CASCADE,
+    FOREIGN KEY (metar_fk) REFERENCES metar(id) ON DELETE CASCADE,
+    FOREIGN KEY (taf_fk) REFERENCES taf(id) ON DELETE CASCADE,
     
     -- Contrainte pour s'assurer qu'une condition appartient soit à METAR soit à TAF, mais pas les deux
     CONSTRAINT chk_single_parent CHECK (
-        (metar_id IS NOT NULL AND taf_id IS NULL) OR 
-        (metar_id IS NULL AND taf_id IS NOT NULL)
+        (metar_fk IS NOT NULL AND taf_fk IS NULL) OR 
+        (metar_fk IS NULL AND taf_fk IS NOT NULL)
     )
 );
+
+-- Ajout des contraintes de clés étrangères pour flight (après création des tables)
+ALTER TABLE flight 
+    ADD CONSTRAINT fk_flight_metar FOREIGN KEY (departure_metar_fk) REFERENCES metar(id),
+    ADD CONSTRAINT fk_flight_taf FOREIGN KEY (arrival_taf_fk) REFERENCES taf(id);

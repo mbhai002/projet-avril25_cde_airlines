@@ -288,7 +288,7 @@ class PostgreSQLManager:
         """
         # Mapping des champs MongoDB vers PostgreSQL
         data = {
-            'metar_id': metar_doc.get('_id'),
+            'external_id': metar_doc.get('_id'),  # Stocker l'ID MongoDB original
             'observation_time': self._format_timestamp(
                 metar_doc.get('@observation_time') or metar_doc.get('observation_time')
             ),
@@ -354,8 +354,8 @@ class PostgreSQLManager:
         data.update(sky_conditions)
         
         # Vérifier les champs obligatoires
-        if not data['metar_id'] or not data['station_id']:
-            raise ValueError(f"Champs obligatoires manquants: metar_id={data['metar_id']}, station_id={data['station_id']}")
+        if not data['external_id'] or not data['station_id']:
+            raise ValueError(f"Champs obligatoires manquants: external_id={data['external_id']}, station_id={data['station_id']}")
         
         return data
     
@@ -371,7 +371,7 @@ class PostgreSQLManager:
         """
         # Mapping des champs MongoDB vers PostgreSQL
         data = {
-            'id': taf_doc.get('_id'),
+            'external_id': taf_doc.get('_id'),  # Stocker l'ID MongoDB original
             'station_id': taf_doc.get('@station_id') or taf_doc.get('station_id'),
             'issue_time': self._format_timestamp(
                 taf_doc.get('@issue_time') or taf_doc.get('issue_time')
@@ -425,19 +425,19 @@ class PostgreSQLManager:
         }
         
         # Vérifier les champs obligatoires
-        if not data['id'] or not data['station_id']:
-            raise ValueError(f"Champs obligatoires manquants: id={data['id']}, station_id={data['station_id']}")
+        if not data['external_id'] or not data['station_id']:
+            raise ValueError(f"Champs obligatoires manquants: external_id={data['external_id']}, station_id={data['station_id']}")
         
         return data
     
-    def _insert_sky_conditions(self, sky_conditions: List[Dict], metar_id: str = None, taf_id: str = None) -> int:
+    def _insert_sky_conditions(self, sky_conditions: List[Dict], metar_external_id: str = None, taf_external_id: str = None) -> int:
         """
         Insère les conditions de ciel dans la table sky_condition
         
         Args:
             sky_conditions: Liste des conditions de ciel
-            metar_id: ID du METAR (optionnel)
-            taf_id: ID du TAF (optionnel)
+            metar_external_id: External ID du METAR (optionnel)
+            taf_external_id: External ID du TAF (optionnel)
             
         Returns:
             int: Nombre de conditions insérées
@@ -451,19 +451,40 @@ class PostgreSQLManager:
         try:
             cursor = self.connection.cursor()
             
+            # Récupérer l'ID numérique PostgreSQL à partir de l'external_id
+            metar_fk = None
+            taf_fk = None
+            
+            if metar_external_id:
+                cursor.execute("SELECT id FROM metar WHERE external_id = %s", (metar_external_id,))
+                result = cursor.fetchone()
+                if result:
+                    metar_fk = result[0]
+            
+            if taf_external_id:
+                cursor.execute("SELECT id FROM taf WHERE external_id = %s", (taf_external_id,))
+                result = cursor.fetchone()
+                if result:
+                    taf_fk = result[0]
+            
+            # Si on n'a pas trouvé l'ID parent, on ne peut pas insérer
+            if not metar_fk and not taf_fk:
+                self.logger.warning(f"Aucun parent trouvé pour les sky_conditions (metar_external_id={metar_external_id}, taf_external_id={taf_external_id})")
+                return 0
+            
             insert_query = """
                 INSERT INTO sky_condition (
-                    metar_id, taf_id, sky_cover, cloud_base_ft_agl, cloud_type, condition_order
+                    metar_fk, taf_fk, sky_cover, cloud_base_ft_agl, cloud_type, condition_order
                 ) VALUES (
-                    %(metar_id)s, %(taf_id)s, %(sky_cover)s, %(cloud_base_ft_agl)s, %(cloud_type)s, %(condition_order)s
+                    %(metar_fk)s, %(taf_fk)s, %(sky_cover)s, %(cloud_base_ft_agl)s, %(cloud_type)s, %(condition_order)s
                 )
             """
             
             for condition in sky_conditions:
                 try:
                     condition_data = {
-                        'metar_id': metar_id,
-                        'taf_id': taf_id,
+                        'metar_fk': metar_fk,
+                        'taf_fk': taf_fk,
                         'sky_cover': condition['sky_cover'],
                         'cloud_base_ft_agl': condition['cloud_base_ft_agl'],
                         'cloud_type': condition.get('cloud_type'),
@@ -514,19 +535,19 @@ class PostgreSQLManager:
             
             insert_query = """
                 INSERT INTO metar (
-                    metar_id, observation_time, raw_text, station_id, wind_dir_degrees,
+                    external_id, observation_time, raw_text, station_id, wind_dir_degrees,
                     temp_c, dewpoint_c, wind_speed_kt, wind_gust_kt, visibility_statute_mi,
                     altim_in_hg, sea_level_pressure_mb, flight_category,
                     maxt_c, mint_c, metar_type, pcp3hr_in, pcp6hr_in, pcp24hr_in,
                     precip_in, three_hr_pressure_tendency_mb, vert_vis_ft, wx_string
                 ) VALUES (
-                    %(metar_id)s, %(observation_time)s, %(raw_text)s, %(station_id)s, %(wind_dir_degrees)s,
+                    %(external_id)s, %(observation_time)s, %(raw_text)s, %(station_id)s, %(wind_dir_degrees)s,
                     %(temp_c)s, %(dewpoint_c)s, %(wind_speed_kt)s, %(wind_gust_kt)s, %(visibility_statute_mi)s,
                     %(altim_in_hg)s, %(sea_level_pressure_mb)s, %(flight_category)s,
                     %(maxt_c)s, %(mint_c)s, %(metar_type)s, %(pcp3hr_in)s, %(pcp6hr_in)s, %(pcp24hr_in)s,
                     %(precip_in)s, %(three_hr_pressure_tendency_mb)s, %(vert_vis_ft)s, %(wx_string)s
                 )
-                ON CONFLICT (metar_id) DO NOTHING
+                ON CONFLICT (external_id) DO NOTHING
             """
             
             for metar_doc in metar_docs:
@@ -542,9 +563,9 @@ class PostgreSQLManager:
                         if sky_conditions:
                             sky_inserted = self._insert_sky_conditions(
                                 sky_conditions, 
-                                metar_id=prepared_data['metar_id']
+                                metar_external_id=prepared_data['external_id']
                             )
-                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour METAR {prepared_data['metar_id']}")
+                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour METAR {prepared_data['external_id']}")
                         
                 except Exception as e:
                     self.logger.warning(f"Erreur insertion METAR {metar_doc.get('_id', 'unknown')}: {e}")
@@ -589,19 +610,19 @@ class PostgreSQLManager:
             
             insert_query = """
                 INSERT INTO taf (
-                    id, station_id, issue_time, bulletin_time, valid_time_from, valid_time_to,
+                    external_id, station_id, issue_time, bulletin_time, valid_time_from, valid_time_to,
                     remarks, fcst_time_from, fcst_time_to, wind_dir_degrees, wind_speed_kt,
                     wind_gust_kt, visibility_statute_mi, vert_vis_ft, wx_string,
                     altim_in_hg, change_indicator, probability,
                     max_temp_c, min_temp_c, raw_text
                 ) VALUES (
-                    %(id)s, %(station_id)s, %(issue_time)s, %(bulletin_time)s, %(valid_time_from)s, %(valid_time_to)s,
+                    %(external_id)s, %(station_id)s, %(issue_time)s, %(bulletin_time)s, %(valid_time_from)s, %(valid_time_to)s,
                     %(remarks)s, %(fcst_time_from)s, %(fcst_time_to)s, %(wind_dir_degrees)s, %(wind_speed_kt)s,
                     %(wind_gust_kt)s, %(visibility_statute_mi)s, %(vert_vis_ft)s, %(wx_string)s,
                     %(altim_in_hg)s, %(change_indicator)s, %(probability)s,
                     %(max_temp_c)s, %(min_temp_c)s, %(raw_text)s
                 )
-                ON CONFLICT (id) DO NOTHING
+                ON CONFLICT (external_id) DO NOTHING
             """
             
             for taf_doc in taf_docs:
@@ -617,9 +638,9 @@ class PostgreSQLManager:
                         if sky_conditions:
                             sky_inserted = self._insert_sky_conditions(
                                 sky_conditions, 
-                                taf_id=prepared_data['id']
+                                taf_external_id=prepared_data['external_id']
                             )
-                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour TAF {prepared_data['id']}")
+                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour TAF {prepared_data['external_id']}")
                         
                 except Exception as e:
                     self.logger.warning(f"Erreur insertion TAF {taf_doc.get('_id', 'unknown')}: {e}")
@@ -661,8 +682,15 @@ class PostgreSQLManager:
             'airline_code': airline_code,
             'aircraft_code': None,  # Vide pour l'instant comme demandé
             
-            # Départ
-            'departure_metar': flight_doc.get('metar_id'),  # ID du METAR associé
+            # Stocker les IDs MongoDB pour le mapping ultérieur
+            'departure_metar_external_id': flight_doc.get('metar_id'),  # ID MongoDB du METAR
+            'arrival_taf_external_id': flight_doc.get('taf_id'),        # ID MongoDB du TAF
+            
+            # Les clés étrangères seront remplies par une requête de mapping séparée
+            'departure_metar_fk': None,
+            'arrival_taf_fk': None,
+            
+            # Horaires de départ
             'departure_scheduled_utc': self._format_timestamp(
                 flight_doc.get('departure', {}).get('scheduled_utc')
             ),
@@ -672,8 +700,7 @@ class PostgreSQLManager:
             'departure_terminal': flight_doc.get('departure', {}).get('terminal'),
             'departure_gate': flight_doc.get('departure', {}).get('gate'),
             
-            # Arrivée
-            'arrival_taf': flight_doc.get('taf_id'),  # ID du TAF associé
+            # Horaires d'arrivée
             'arrival_scheduled_utc': self._format_timestamp(
                 flight_doc.get('arrival', {}).get('scheduled_utc')
             ),
@@ -767,16 +794,16 @@ class PostgreSQLManager:
             insert_query = """
                 INSERT INTO flight (
                     flight_number, from_airport, to_airport, airline_code, aircraft_code,
-                    departure_metar, departure_scheduled_utc, departure_actual_utc, 
+                    departure_metar_external_id, departure_scheduled_utc, departure_actual_utc, 
                     departure_terminal, departure_gate,
-                    arrival_taf, arrival_scheduled_utc, arrival_actual_utc, 
+                    arrival_taf_external_id, arrival_scheduled_utc, arrival_actual_utc, 
                     arrival_terminal, arrival_gate,
                     status, delay_min
                 ) VALUES (
                     %(flight_number)s, %(from_airport)s, %(to_airport)s, %(airline_code)s, %(aircraft_code)s,
-                    %(departure_metar)s, %(departure_scheduled_utc)s, %(departure_actual_utc)s, 
+                    %(departure_metar_external_id)s, %(departure_scheduled_utc)s, %(departure_actual_utc)s, 
                     %(departure_terminal)s, %(departure_gate)s,
-                    %(arrival_taf)s, %(arrival_scheduled_utc)s, %(arrival_actual_utc)s, 
+                    %(arrival_taf_external_id)s, %(arrival_scheduled_utc)s, %(arrival_actual_utc)s, 
                     %(arrival_terminal)s, %(arrival_gate)s,
                     %(status)s, %(delay_min)s
                 )
@@ -808,6 +835,65 @@ class PostgreSQLManager:
                 cursor.close()
         
         return inserted_count
+    
+    def update_flight_foreign_keys(self) -> int:
+        """
+        Met à jour les clés étrangères des vols en utilisant les external_id
+        
+        Returns:
+            int: Nombre de vols mis à jour
+        """
+        if not self.test_connection():
+            self.logger.error("Pas de connexion PostgreSQL pour la mise à jour des clés étrangères")
+            return 0
+        
+        updated_count = 0
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor()
+            
+            # Mise à jour des clés étrangères METAR de départ
+            metar_update_query = """
+                UPDATE flight 
+                SET departure_metar_fk = m.id
+                FROM metar m 
+                WHERE flight.departure_metar_external_id = m.external_id
+                AND flight.departure_metar_fk IS NULL
+                AND flight.departure_metar_external_id IS NOT NULL
+            """
+            
+            cursor.execute(metar_update_query)
+            metar_updated = cursor.rowcount
+            self.logger.info(f"Clés étrangères METAR mises à jour: {metar_updated}")
+            
+            # Mise à jour des clés étrangères TAF d'arrivée
+            taf_update_query = """
+                UPDATE flight 
+                SET arrival_taf_fk = t.id
+                FROM taf t 
+                WHERE flight.arrival_taf_external_id = t.external_id
+                AND flight.arrival_taf_fk IS NULL
+                AND flight.arrival_taf_external_id IS NOT NULL
+            """
+            
+            cursor.execute(taf_update_query)
+            taf_updated = cursor.rowcount
+            self.logger.info(f"Clés étrangères TAF mises à jour: {taf_updated}")
+            
+            self.connection.commit()
+            updated_count = metar_updated + taf_updated
+            
+        except Exception as e:
+            if self.connection:
+                self.connection.rollback()
+            self.logger.error(f"Erreur lors de la mise à jour des clés étrangères: {e}")
+            
+        finally:
+            if cursor:
+                cursor.close()
+        
+        return updated_count
     
     def update_flights_batch(self, flight_docs: List[Dict]) -> int:
         """

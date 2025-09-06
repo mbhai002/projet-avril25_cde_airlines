@@ -13,8 +13,8 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.flight_data_scrapper import FlightDataScraper
-from data.metar_xml_collector import MetarXmlCollector
-from data.taf_xml_collector import TafXmlCollector
+from data.metar_collector import MetarCollector
+from data.taf_collector import TafCollector
 from utils.mongodb_manager import MongoDBManager
 from utils.postgresql_manager import PostgreSQLManager
 from config.simple_logger import get_logger, log_operation_time, log_database_operation
@@ -42,12 +42,12 @@ class FlightOrchestrator:
         self.mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
         
         # Initialiser les collecteurs XML si activés
-        if config.enable_xml_weather:
-            self.metar_xml_collector = MetarXmlCollector()
-            self.taf_xml_collector = TafXmlCollector()
+        if config.enable_weather:
+            self.metar_collector = MetarCollector()
+            self.taf_collector = TafCollector()
         else:
-            self.metar_xml_collector = None
-            self.taf_xml_collector = None
+            self.metar_collector = None
+            self.taf_collector = None
             
         # Initialiser le gestionnaire PostgreSQL si activé
         if config.enable_postgresql_insertion:
@@ -56,7 +56,7 @@ class FlightOrchestrator:
             self.pg_manager = None
         
         self.logger.info(f"FlightOrchestrator initialized - Database: {config.database_name}, "
-                        f"Collection: {config.collection_name}, Weather: {config.enable_xml_weather}")
+                        f"Collection: flight, Weather: {config.enable_weather}")
     
     def collect_and_store_realtime_flights(self, session_id) -> CollectionResults:
         """
@@ -120,7 +120,7 @@ class FlightOrchestrator:
         
         self.logger.info("=== ÉTAPE 2: COLLECTE DONNÉES MÉTÉO ===")
         self.logger.info(f"Session ID: {session_id}")
-        self.logger.info("Collecte METAR et TAF XML")
+        self.logger.info("Collecte METAR et TAF")
         
         try:
             # Connexion MongoDB
@@ -128,7 +128,7 @@ class FlightOrchestrator:
                 return results
             
             # Collecte des données météo
-            if self.config.enable_xml_weather:
+            if self.config.enable_weather:
                 self._collect_weather_data(results, session_id)
                 results.success = True
             else:
@@ -223,13 +223,13 @@ class FlightOrchestrator:
     
     def _collect_weather_data(self, results: CollectionResults, session_id: str):
         """Collecte les données météo METAR/TAF"""
-        self.logger.info("Starting XML weather data collection (METAR/TAF)...")
+        self.logger.info("Starting weather data collection (METAR/TAF)...")
         
         # Collecte METAR
-        if self.metar_xml_collector:
+        if self.metar_collector:
             try:
                 start_time = time.time()
-                metar_docs = self.metar_xml_collector.fetch_metar_data()
+                metar_docs = self.metar_collector.fetch_metar_data()
                 duration_ms = (time.time() - start_time) * 1000
                 
                 if metar_docs:
@@ -238,25 +238,25 @@ class FlightOrchestrator:
                             doc['_metadata'] = {}
                         doc['_metadata']['collection_session_id'] = session_id
                     
-                    inserted = self._insert_weather_xml_to_mongodb(metar_docs, "metar_xml")
-                    results.metar_xml_collected = len(metar_docs)
-                    results.metar_xml_inserted = inserted
+                    inserted = self._insert_weather_to_mongodb(metar_docs, "metar")
+                    results.metar_collected = len(metar_docs)
+                    results.metar_inserted = inserted
                     
-                    log_database_operation(self.logger, "insert", "weather_metar_xml", inserted, duration_ms)
-                    self.logger.info(f"✓ {inserted} METAR XML documents inserted")
+                    log_database_operation(self.logger, "insert", "metar", inserted, duration_ms)
+                    self.logger.info(f"✓ {inserted} METAR documents inserted")
                 else:
-                    self.logger.warning("No METAR XML data collected")
+                    self.logger.warning("No METAR data collected")
                     
             except Exception as e:
-                error_msg = f"Error during METAR XML collection: {e}"
+                error_msg = f"Error during METAR collection: {e}"
                 self.logger.error(error_msg, exc_info=True)
                 results.errors.append(error_msg)
         
         # Collecte TAF
-        if self.taf_xml_collector:
+        if self.taf_collector:
             try:
                 start_time = time.time()
-                taf_docs = self.taf_xml_collector.fetch_taf_data()
+                taf_docs = self.taf_collector.fetch_taf_data()
                 duration_ms = (time.time() - start_time) * 1000
                 
                 if taf_docs:
@@ -265,17 +265,17 @@ class FlightOrchestrator:
                             doc['_metadata'] = {}
                         doc['_metadata']['collection_session_id'] = session_id
                     
-                    inserted = self._insert_weather_xml_to_mongodb(taf_docs, "taf_xml")
-                    results.taf_xml_collected = len(taf_docs)
-                    results.taf_xml_inserted = inserted
+                    inserted = self._insert_weather_to_mongodb(taf_docs, "taf")
+                    results.taf_collected = len(taf_docs)
+                    results.taf_inserted = inserted
                     
-                    log_database_operation(self.logger, "insert", "weather_taf_xml", inserted, duration_ms)
-                    self.logger.info(f"✓ {inserted} TAF XML documents inserted")
+                    log_database_operation(self.logger, "insert", "taf", inserted, duration_ms)
+                    self.logger.info(f"✓ {inserted} TAF documents inserted")
                 else:
-                    self.logger.warning("No TAF XML data collected")
+                    self.logger.warning("No TAF data collected")
                     
             except Exception as e:
-                error_msg = f"Error during TAF XML collection: {e}"
+                error_msg = f"Error during TAF collection: {e}"
                 self.logger.error(error_msg, exc_info=True)
                 results.errors.append(error_msg)
     
@@ -320,7 +320,7 @@ class FlightOrchestrator:
         
         if success:
             results.flights_inserted = len(prepared_flights)
-            log_database_operation(self.logger, operation, self.config.collection_name, 
+            log_database_operation(self.logger, operation, "flight", 
                                  len(prepared_flights), duration_ms)
             self.logger.info(f"✓ {len(prepared_flights)} flights {operation}ed successfully")
             results.success = True
@@ -329,7 +329,7 @@ class FlightOrchestrator:
             self.logger.error(error_msg)
             results.errors.append(error_msg)
             # Succès partiel si météo collectée
-            if results.metar_xml_collected > 0 or results.taf_xml_collected > 0:
+            if results.metar_collected > 0 or results.taf_collected > 0:
                 results.success = True
                 self.logger.info("Partial success: weather data collected despite flight insertion error")
     
@@ -412,7 +412,7 @@ class FlightOrchestrator:
     def _insert_or_upsert_flights(self, flights: List[Dict], upsert: bool = False) -> bool:
         """Insère ou met à jour les vols dans MongoDB par lots"""
         try:
-            collection = self.mongo_manager.database[self.config.collection_name]
+            collection = self.mongo_manager.database["flight"]
             total_processed = 0
             
             # Traitement par lots
@@ -489,7 +489,7 @@ class FlightOrchestrator:
     def _ensure_indexes(self):
         """Crée les index nécessaires pour optimiser les requêtes"""
         try:
-            collection = self.mongo_manager.database[self.config.collection_name]
+            collection = self.mongo_manager.database["flight"]
             
             # Index essentiels pour les requêtes
             indexes = [
@@ -520,10 +520,9 @@ class FlightOrchestrator:
         except Exception as e:
             self.logger.warning(f"Erreur lors de la création des index: {e}")
     
-    def _insert_weather_xml_to_mongodb(self, documents: List[Dict], collection_suffix: str) -> int:
-        """Insère les documents météorologiques XML dans MongoDB par lots"""
+    def _insert_weather_to_mongodb(self, documents: List[Dict], collection_name: str) -> int:
+        """Insère les documents météorologiques dans MongoDB par lots"""
         try:
-            collection_name = f"weather_{collection_suffix}"
             collection = self.mongo_manager.database[collection_name]
             total_inserted = 0
             
@@ -536,7 +535,7 @@ class FlightOrchestrator:
                     batch_inserted = len(result.inserted_ids)
                     total_inserted += batch_inserted
                     
-                    self.logger.info(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {batch_inserted}/{len(batch)} documents insérés")
+                    self.logger.info(f"Lot {collection_name} {i//self.config.batch_size + 1}: {batch_inserted}/{len(batch)} documents insérés")
                     
                 except Exception as e:
                     # Gérer les erreurs de bulk write (doublons, etc.)
@@ -549,29 +548,29 @@ class FlightOrchestrator:
                         total_inserted += n_inserted
                         
                         if duplicate_errors > 0:
-                            self.logger.info(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés ({duplicate_errors} doublons ignorés)")
+                            self.logger.info(f"Lot {collection_name} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés ({duplicate_errors} doublons ignorés)")
                         else:
-                            self.logger.warning(f"Lot {collection_suffix} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés (erreurs: {len(write_errors)})")
+                            self.logger.warning(f"Lot {collection_name} {i//self.config.batch_size + 1}: {n_inserted}/{len(batch)} documents insérés (erreurs: {len(write_errors)})")
                     else:
-                        self.logger.warning(f"Erreur dans le lot {collection_suffix} {i//self.config.batch_size + 1}: {str(e)[:100]}...")
+                        self.logger.warning(f"Erreur dans le lot {collection_name} {i//self.config.batch_size + 1}: {str(e)[:100]}...")
                     
                     continue
             
-            self.logger.info(f"Total {collection_suffix} inséré: {total_inserted}/{len(documents)} documents")
+            self.logger.info(f"Total {collection_name} inséré: {total_inserted}/{len(documents)} documents")
             
             # Créer des index spécifiques pour les données météorologiques
-            self._ensure_weather_indexes(collection, collection_suffix)
+            self._ensure_weather_indexes(collection, collection_name)
             
             return total_inserted
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de l'insertion {collection_suffix} MongoDB: {e}")
+            self.logger.error(f"Erreur lors de l'insertion {collection_name} MongoDB: {e}")
             return 0
     
     def _ensure_weather_indexes(self, collection, data_type: str):
         """Crée les index nécessaires pour les collections météorologiques"""
         try:
-            if data_type == "metar_xml":
+            if data_type == "metar":
                 indexes = [
                     [("@station_id", 1)],
                     [("@observation_time", -1)],
@@ -579,7 +578,7 @@ class FlightOrchestrator:
                     [("@station_id", 1), ("@observation_time", -1)],
                     [("_metadata.collection_session_id", 1), ("@station_id", 1)]
                 ]
-            elif data_type == "taf_xml":
+            elif data_type == "taf":
                 indexes = [
                     [("@station_id", 1)],
                     [("@issue_time", -1)],
@@ -639,8 +638,8 @@ class FlightOrchestrator:
                 return results
             
             # Obtenir les collections
-            flights_collection = self.mongo_manager.database[self.config.collection_name]
-            metar_collection = self.mongo_manager.database["weather_metar_xml"]
+            flights_collection = self.mongo_manager.database["flight"]
+            metar_collection = self.mongo_manager.database["metar"]
             
             # Construire le filtre pour les vols
             flights_filter = {
@@ -935,8 +934,8 @@ class FlightOrchestrator:
                 return results
             
             # Obtenir les collections
-            flights_collection = self.mongo_manager.database[self.config.collection_name]
-            taf_collection = self.mongo_manager.database["weather_taf_xml"]
+            flights_collection = self.mongo_manager.database["flight"]
+            taf_collection = self.mongo_manager.database["taf"]
             
             # Construire le filtre pour les vols
             flights_filter = {
@@ -1084,9 +1083,9 @@ class FlightOrchestrator:
                 return results
             
             # Obtenir les collections
-            flights_collection = self.mongo_manager.database[self.config.collection_name]
-            metar_collection = self.mongo_manager.database["weather_metar_xml"]
-            taf_collection = self.mongo_manager.database["weather_taf_xml"]
+            flights_collection = self.mongo_manager.database["flight"]
+            metar_collection = self.mongo_manager.database["metar"]
+            taf_collection = self.mongo_manager.database["taf"]
             
             # 1. Récupérer les IDs METAR et TAF des vols associés
             flights_filter = {
@@ -1144,6 +1143,10 @@ class FlightOrchestrator:
             if flights_session:
                 inserted_flights = self.pg_manager.insert_flights_batch(flights_session)
                 self.logger.info(f"{inserted_flights} vols insérés dans PostgreSQL")
+                
+                # Mise à jour des clés étrangères après insertion
+                updated_fks = self.pg_manager.update_flight_foreign_keys()
+                self.logger.info(f"{updated_fks} clés étrangères mises à jour")
             
             results.success = True
             
@@ -1189,7 +1192,7 @@ class FlightOrchestrator:
                 return results
             
             # Obtenir la collection des vols
-            flights_collection = self.mongo_manager.database[self.config.collection_name]
+            flights_collection = self.mongo_manager.database["flight"]
             
             # 1. Récupérer les vols passés (type PAST) de la session
             flights_filter = {

@@ -22,18 +22,17 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst_airlines_test3",
-        collection_name="flights",
+        database_name="dst_airlines_test5",
 
         # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst2",
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst3",
 
         # Collecte
         num_airports=2,
         delay=1.5,
         batch_size=500,
-        enable_xml_weather=True,  
+        enable_weather=True,  
         hour_offset=1,          # Décalage pour vols temps réel
         past_hour_offset=-20,   # Décalage pour vols passés
         
@@ -71,7 +70,7 @@ def main():
             print(f"  - Schedule: XX:{config.schedule_minute:02d} toutes les {config.loop_interval_minutes} minutes")
         print(f"  - Database: {config.database_name}")
         print(f"  - Airports: {config.num_airports}")
-        print(f"  - Weather XML: {config.enable_xml_weather}")
+        print(f"  - Weather: {config.enable_weather}")
         print("")
         
         # Exécuter

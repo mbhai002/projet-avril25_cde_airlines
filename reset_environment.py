@@ -63,9 +63,11 @@ def reset_postgresql(config: CollectionConfig):
         
         # Tables à vider (dans l'ordre pour respecter les contraintes FK)
         tables_to_truncate = [
+            'sky_condition',
             'flight',  # Table principale avec FK vers metar et taf
             'taf',     # Tables météo
             'metar'
+            
         ]
         
         # Vérifier quelles tables existent

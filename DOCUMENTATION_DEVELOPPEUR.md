@@ -13,8 +13,8 @@ projet-avril25_cde_airlines/
 │   └── simple_logger.py     # Système de logging
 ├── 📁 data/                 # Collecteurs de données
 │   ├── flight_data_scrapper.py    # Collecte vols (airportinfo.live)
-│   ├── metar_xml_collector.py     # Collecte METAR (aviationweather.gov)
-│   └── taf_xml_collector.py       # Collecte TAF (aviationweather.gov)
+│   ├── metar_collector.py     # Collecte METAR (aviationweather.gov)
+│   └── taf_collector.py       # Collecte TAF (aviationweather.gov)
 ├── 📁 orchestration/        # Orchestration du workflow
 │   ├── execution_manager.py       # Gestionnaire d'exécution
 │   └── flight_orchestrator.py     # Orchestrateur principal
@@ -43,7 +43,7 @@ Le système exécute un workflow en 7 étapes avec un **Session ID global** pour
 - **Sources** : aviationweather.gov
 - **METAR** : Observations météo actuelles
 - **TAF** : Prévisions météo (Terminal Aerodrome Forecast)
-- **Stockage** : MongoDB collections `weather_metar_xml` et `weather_taf_xml`
+- **Stockage** : MongoDB collections `metar` et `taf`
 
 ### **ÉTAPE 3 : Collecte Vols Passés** 🛬
 - **Source** : airportinfo.live
@@ -81,7 +81,6 @@ def create_my_config() -> CollectionConfig:
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
         database_name="dst_airlines_test",
-        collection_name="flights",
         
         # PostgreSQL  
         postgresql_uri="postgresql://user:pass@localhost:5433/dst",
@@ -97,7 +96,7 @@ def create_my_config() -> CollectionConfig:
         run_once=True,              # True = une fois, False = boucle
         collect_realtime=True,      # Collecte vols temps réel
         collect_past=False,         # Collecte vols passés
-        enable_xml_weather=True,    # Collecte météo
+        enable_weather=True,    # Collecte météo
         
         # Scheduling (mode boucle)
         schedule_minute=5,          # Exécution à XX:05
@@ -187,8 +186,8 @@ script_version="2.0"
 
 ### **Collecteurs de Données**
 - **FlightDataScraper** : Scraping des vols via airportinfo.live
-- **MetarXmlCollector** : API METAR XML aviationweather.gov  
-- **TafXmlCollector** : API TAF XML aviationweather.gov
+- **MetarCollector** : API METAR aviationweather.gov  
+- **TafCollector** : API TAF aviationweather.gov
 
 ## 🚀 Utilisation
 

@@ -21,7 +21,9 @@ def quick_reset():
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Reset rapide en cours...")
     
     config = CollectionConfig()
-    
+    config.database_name = "dst_airlines_test5"  # Assurez-vous d'utiliser la bonne DB
+    config.postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst3"
+
     # MongoDB
     try:
         mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
@@ -42,7 +44,7 @@ def quick_reset():
             conn = psycopg2.connect(config.postgresql_uri)
             cursor = conn.cursor()
             
-            tables = ['flight', 'taf', 'metar']
+            tables = ['sky_condition', 'flight', 'taf', 'metar']
             for table in tables:
                 try:
                     cursor.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE;")
@@ -56,6 +58,9 @@ def quick_reset():
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️  PostgreSQL: {e}")
     
+    # effacer les logs
+    
+
     print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Reset rapide terminé")
 
 

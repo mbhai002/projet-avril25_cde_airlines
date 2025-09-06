@@ -17,13 +17,13 @@ from config.simple_logger import get_logger
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-class TafXmlCollector:
+class TafCollector:
     """
     Classe pour récupérer les données TAF au format XML depuis aviationweather.gov
     et les convertir en documents JSON.
     """
     
-    TAF_XML_URL = "https://aviationweather.gov/data/cache/tafs.cache.xml.gz"
+    TAF_URL = "https://aviationweather.gov/data/cache/tafs.cache.xml.gz"
     
     def __init__(self, data_dir: Optional[str] = None):
         """
@@ -45,7 +45,7 @@ class TafXmlCollector:
         # Initialiser le logger
         self.logger = get_logger(__name__)
         
-    def download_xml_file(self) -> Optional[str]:
+    def download_file(self) -> Optional[str]:
         """
         Télécharge le fichier TAF XML compressé depuis aviationweather.gov.
         
@@ -60,10 +60,10 @@ class TafXmlCollector:
             gz_filepath = os.path.join(self.data_dir, gz_filename)
             xml_filepath = os.path.join(self.data_dir, xml_filename)
             
-            self.logger.info(f"Téléchargement depuis {self.TAF_XML_URL}")
+            self.logger.info(f"Téléchargement depuis {self.TAF_URL}")
             
             # Télécharger le fichier
-            response = requests.get(self.TAF_XML_URL, stream=True, timeout=30, verify=False)
+            response = requests.get(self.TAF_URL, stream=True, timeout=30, verify=False)
             response.raise_for_status()
             
             # Sauvegarder le fichier compressé
@@ -158,7 +158,7 @@ class TafXmlCollector:
                 except (ValueError, TypeError):
                     pass  # Garder la valeur originale si conversion impossible
     
-    def parse_xml_to_json(self, xml_filepath: str) -> List[Dict]:
+    def parse_to_json(self, xml_filepath: str) -> List[Dict]:
         """
         Parse le fichier XML TAF et convertit en liste de documents JSON.
         Un document par forecast pour préserver les détails des prévisions.
@@ -316,13 +316,13 @@ class TafXmlCollector:
             List[Dict]: Liste des documents TAF en format JSON
         """
         # 1. Télécharger le fichier XML
-        xml_filepath = self.download_xml_file()
+        xml_filepath = self.download_file()
         if not xml_filepath:
             self.logger.error("Impossible de télécharger le fichier XML")
             return []
         
         # 2. Parser le XML en JSON
-        documents = self.parse_xml_to_json(xml_filepath)
+        documents = self.parse_to_json(xml_filepath)
         
         # 3. Nettoyer le fichier temporaire (optionnel)
         try:
@@ -358,11 +358,11 @@ class TafXmlCollector:
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Créer une instance du collecteur
-    collector = TafXmlCollector()
+    collector = TafCollector()
     logger = get_logger(__name__)
     
     # Récupérer les données TAF
-    logger.info("Démarrage de la collecte TAF XML...")
+    logger.info("Démarrage de la collecte TAF...")
     taf_documents = collector.fetch_taf_data()
     
     if taf_documents:

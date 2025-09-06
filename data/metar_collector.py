@@ -17,17 +17,17 @@ from config.simple_logger import get_logger
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-class MetarXmlCollector:
+class MetarCollector:
     """
     Classe pour récupérer les données METAR au format XML depuis aviationweather.gov
     et les convertir en documents JSON.
     """
     
-    METAR_XML_URL = "https://aviationweather.gov/data/cache/metars.cache.xml.gz"
+    METAR_URL = "https://aviationweather.gov/data/cache/metars.cache.xml.gz"
     
     def __init__(self, data_dir: Optional[str] = None):
         """
-        Initialise le collecteur METAR XML.
+        Initialise le collecteur METAR.
         
         Args:
             data_dir: Répertoire où stocker les fichiers temporaires XML.
@@ -45,7 +45,7 @@ class MetarXmlCollector:
         # Initialiser le logger
         self.logger = get_logger(__name__)
         
-    def download_xml_file(self) -> Optional[str]:
+    def download_file(self) -> Optional[str]:
         """
         Télécharge le fichier METAR XML compressé depuis aviationweather.gov.
         
@@ -60,10 +60,10 @@ class MetarXmlCollector:
             gz_filepath = os.path.join(self.data_dir, gz_filename)
             xml_filepath = os.path.join(self.data_dir, xml_filename)
             
-            self.logger.info(f"Téléchargement depuis {self.METAR_XML_URL}")
+            self.logger.info(f"Téléchargement depuis {self.METAR_URL}")
             
             # Télécharger le fichier
-            response = requests.get(self.METAR_XML_URL, stream=True, timeout=30, verify=False)
+            response = requests.get(self.METAR_URL, stream=True, timeout=30, verify=False)
             response.raise_for_status()
             
             # Sauvegarder le fichier compressé
@@ -158,7 +158,7 @@ class MetarXmlCollector:
                 except (ValueError, TypeError):
                     pass  # Garder la valeur originale si conversion impossible
     
-    def parse_xml_to_json(self, xml_filepath: str) -> List[Dict]:
+    def parse_to_json(self, xml_filepath: str) -> List[Dict]:
         """
         Parse le fichier XML METAR et convertit en liste de documents JSON.
         
@@ -254,13 +254,13 @@ class MetarXmlCollector:
             List[Dict]: Liste des documents METAR en format JSON
         """
         # 1. Télécharger le fichier XML
-        xml_filepath = self.download_xml_file()
+        xml_filepath = self.download_file()
         if not xml_filepath:
             self.logger.error("Impossible de télécharger le fichier XML")
             return []
         
         # 2. Parser le XML en JSON
-        documents = self.parse_xml_to_json(xml_filepath)
+        documents = self.parse_to_json(xml_filepath)
         
         # 3. Nettoyer le fichier temporaire (optionnel)
         try:
@@ -296,7 +296,7 @@ class MetarXmlCollector:
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Créer une instance du collecteur
-    collector = MetarXmlCollector()
+    collector = MetarCollector()
     logger = get_logger(__name__)
     
     # Récupérer les données METAR

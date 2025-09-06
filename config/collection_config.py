@@ -20,7 +20,6 @@ class CollectionConfig:
     # Base de données
     mongodb_uri: str = "mongodb://localhost:27017/"
     database_name: str = "dst_airlines_test"
-    collection_name: str = "flights"
     
     # PostgreSQL
     enable_postgresql_insertion: bool = True
@@ -30,7 +29,7 @@ class CollectionConfig:
     num_airports: int = 200
     delay: float = 1.5
     batch_size: int = 500
-    enable_xml_weather: bool = True
+    enable_weather: bool = True
     hour_offset: int = 1  # Décalage pour vols temps réel (1 = prochaine heure)
     past_hour_offset: int = -20  # Décalage pour vols passés (négatif = heures passées)
     
@@ -63,10 +62,10 @@ class CollectionResults:
     duration_seconds: float = 0
     flights_collected: int = 0
     flights_inserted: int = 0
-    metar_xml_collected: int = 0
-    metar_xml_inserted: int = 0
-    taf_xml_collected: int = 0
-    taf_xml_inserted: int = 0
+    metar_collected: int = 0
+    metar_inserted: int = 0
+    taf_collected: int = 0
+    taf_inserted: int = 0
     mongodb_connected: bool = False
     errors: List[str] = None
     

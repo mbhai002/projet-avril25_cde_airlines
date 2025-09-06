@@ -96,7 +96,7 @@ class ExecutionManager:
             time.sleep(2)  # Pause entre les étapes
         
         # ÉTAPE 2: Collecte données météo
-        if self.config.enable_xml_weather:
+        if self.config.enable_weather:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 2: Collecte données météorologiques...")
             try:
                 results_weather = orchestrator.collect_and_store_weather_data()
@@ -119,27 +119,27 @@ class ExecutionManager:
         time.sleep(2)  # Pause entre les étapes
         
         # ÉTAPE 4: Association vols-METAR
-        if self.config.enable_xml_weather and results_realtime and results_realtime.success and global_session_id:
+        if self.config.enable_weather and results_realtime and results_realtime.success and global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Association vols-METAR...")
             try:
                 results_association_metar = orchestrator.associate_flights_with_metar(global_session_id)
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 4 {'réussie' if results_association_metar.success else 'échouée'}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 4: {e}")
-        elif self.config.enable_xml_weather and not global_session_id:
+        elif self.config.enable_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Ignorée (pas de vols temps réel collectés)")
         
         time.sleep(2)  # Pause entre les étapes
         
         # ÉTAPE 5: Association vols-TAF
-        if self.config.enable_xml_weather and results_realtime and results_realtime.success and global_session_id:
+        if self.config.enable_weather and results_realtime and results_realtime.success and global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Association vols-TAF...")
             try:
                 results_association_taf = orchestrator.associate_flights_with_taf(global_session_id)
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 5 {'réussie' if results_association_taf.success else 'échouée'}")
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 5: {e}")
-        elif self.config.enable_xml_weather and not global_session_id:
+        elif self.config.enable_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Ignorée (pas de vols temps réel collectés)")
             
         time.sleep(2)
@@ -176,13 +176,13 @@ class ExecutionManager:
         if results_realtime and results_realtime.success: etapes_reussies.append("temps réel")
         if results_weather and results_weather.success: etapes_reussies.append("météo")
         if results_past and results_past.success: etapes_reussies.append("vols passés")
-        if results_association_metar and results_association_metar.success and self.config.enable_xml_weather: etapes_reussies.append("association-METAR")
-        if results_association_taf and results_association_taf.success and self.config.enable_xml_weather: etapes_reussies.append("association-TAF")
+        if results_association_metar and results_association_metar.success and self.config.enable_weather: etapes_reussies.append("association-METAR")
+        if results_association_taf and results_association_taf.success and self.config.enable_weather: etapes_reussies.append("association-TAF")
         if results_postgres and results_postgres.success and self.config.enable_postgresql_insertion: etapes_reussies.append("insertion-PostgreSQL")
         if results_update and results_update.success and self.config.enable_postgresql_insertion: etapes_reussies.append("mise à jour des vols passés-PostgreSQL")
 
         total_etapes = 3  # Étapes de base (temps réel, météo, vols passés)
-        if self.config.enable_xml_weather:
+        if self.config.enable_weather:
             total_etapes += 2  # +2 pour associations METAR et TAF
         if self.config.enable_postgresql_insertion:
             total_etapes += 2  # +2 pour insertion et mise à jour PostgreSQL
