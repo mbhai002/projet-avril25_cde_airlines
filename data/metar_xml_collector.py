@@ -214,13 +214,13 @@ class MetarXmlCollector:
                     doc["_id"] = f"metar_{len(documents)}"
                 
                 # Ajouter des métadonnées
-                doc.update({
-                    "_metadata_source": "aviationweather.gov",
-                    "_metadata_data_type": "METAR",
-                    "_metadata_file_downloaded_at": datetime.now(),
-                    "_metadata_xml_file": os.path.basename(xml_filepath),
-                    "_metadata_total_fields": len(doc)
-                })
+                doc["_metadata"] = {
+                    "source": "aviationweather.gov",
+                    "data_type": "METAR",
+                    "file_downloaded_at": datetime.now(),
+                    "xml_file": os.path.basename(xml_filepath),
+                    "total_fields": len(doc)
+                }
                 
                 documents.append(doc)
             

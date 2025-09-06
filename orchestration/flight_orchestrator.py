@@ -811,7 +811,7 @@ class FlightOrchestrator:
             for taf in tafs_list:
                 try:
                     # Vérifier si c'est un forecast TAF (pas juste base)
-                    if taf.get('_metadata_data_type') != 'TAF_FORECAST':
+                    if taf.get('_metadata', {}).get('data_type') != 'TAF_FORECAST':
                         continue
                     
                     fcst_time_from = taf.get('forecast_fcst_time_from')

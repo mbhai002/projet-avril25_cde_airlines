@@ -175,6 +175,107 @@ class PostgreSQLManager:
             self.logger.debug(f"Impossible de convertir '{value}' en entier: {e}")
             return None
     
+    def _extract_sky_conditions(self, doc: Dict, prefix: str = "") -> List[Dict]:
+        """
+        Extrait les conditions de ciel d'un document METAR ou TAF
+        
+        Args:
+            doc: Document METAR ou TAF depuis MongoDB
+            prefix: Préfixe pour les champs (ex: "forecast_" pour TAF)
+            
+        Returns:
+            List[Dict]: Liste des conditions de ciel
+        """
+        conditions = []
+        
+        # Construire le nom du champ selon le préfixe
+        sky_condition_field = f"{prefix}sky_condition" if prefix else "sky_condition"
+        
+        # Vérifier si sky_condition est un tableau
+        sky_condition = doc.get(sky_condition_field)
+        if isinstance(sky_condition, list):
+            # Cas où on a un tableau de conditions de ciel
+            for idx, condition in enumerate(sky_condition[:4]):  # Limiter à 4 conditions
+                if isinstance(condition, dict):
+                    sky_cover = condition.get('@sky_cover')
+                    cloud_base = condition.get('@cloud_base_ft_agl')
+                    cloud_type = condition.get('@cloud_type')
+                    
+                    if sky_cover:  # Au minimum sky_cover doit être présent
+                        conditions.append({
+                            'sky_cover': sky_cover,
+                            'cloud_base_ft_agl': self._clean_integer_value(cloud_base),
+                            'cloud_type': cloud_type,
+                            'condition_order': idx + 1
+                        })
+        else:
+            # Cas où on a une seule condition (format direct)
+            sky_cover = (doc.get(f'{prefix}sky_condition_@sky_cover') or 
+                        doc.get(f'@{prefix}sky_condition_sky_cover') or 
+                        doc.get(f'{prefix}sky_condition_sky_cover'))
+            cloud_base = (doc.get(f'{prefix}sky_condition_@cloud_base_ft_agl') or 
+                         doc.get(f'@{prefix}sky_condition_cloud_base_ft_agl') or 
+                         doc.get(f'{prefix}sky_condition_cloud_base_ft_agl'))
+            cloud_type = (doc.get(f'{prefix}sky_condition_@cloud_type') or 
+                         doc.get(f'@{prefix}sky_condition_cloud_type') or 
+                         doc.get(f'{prefix}sky_condition_cloud_type'))
+            
+            if sky_cover:
+                conditions.append({
+                    'sky_cover': sky_cover,
+                    'cloud_base_ft_agl': self._clean_integer_value(cloud_base),
+                    'cloud_type': cloud_type,
+                    'condition_order': 1
+                })
+        
+        return conditions
+    
+    def _parse_sky_conditions(self, metar_doc: Dict) -> Dict:
+        """
+        Parse les conditions de ciel multiples depuis le document METAR
+        
+        Args:
+            metar_doc: Document METAR depuis MongoDB
+            
+        Returns:
+            Dict: Dictionnaire avec les conditions de ciel parsées (sky_condition_sky_cover1, etc.)
+        """
+        sky_conditions = {}
+        
+        # Initialiser les 4 emplacements possibles
+        for i in range(1, 5):
+            sky_conditions[f'sky_condition_sky_cover{i}'] = None
+            sky_conditions[f'sky_condition_cloud_base_ft_agl{i}'] = None
+        
+        # Vérifier si sky_condition est un tableau
+        sky_condition = metar_doc.get('sky_condition')
+        if isinstance(sky_condition, list):
+            # Cas où on a un tableau de conditions de ciel
+            for idx, condition in enumerate(sky_condition[:4]):  # Limiter à 4 conditions
+                position = idx + 1
+                if isinstance(condition, dict):
+                    # Extraire @sky_cover et @cloud_base_ft_agl
+                    sky_cover = condition.get('@sky_cover')
+                    cloud_base = condition.get('@cloud_base_ft_agl')
+                    
+                    sky_conditions[f'sky_condition_sky_cover{position}'] = sky_cover
+                    sky_conditions[f'sky_condition_cloud_base_ft_agl{position}'] = self._clean_integer_value(cloud_base)
+        
+        else:
+            # Cas où on a une seule condition (format direct)
+            sky_cover = (metar_doc.get('sky_condition_@sky_cover') or 
+                        metar_doc.get('@sky_condition_sky_cover') or 
+                        metar_doc.get('sky_condition_sky_cover'))
+            cloud_base = (metar_doc.get('sky_condition_@cloud_base_ft_agl') or 
+                         metar_doc.get('@sky_condition_cloud_base_ft_agl') or 
+                         metar_doc.get('sky_condition_cloud_base_ft_agl'))
+            
+            if sky_cover is not None:
+                sky_conditions['sky_condition_sky_cover1'] = sky_cover
+                sky_conditions['sky_condition_cloud_base_ft_agl1'] = self._clean_integer_value(cloud_base)
+        
+        return sky_conditions
+    
     def _prepare_metar_data(self, metar_doc: Dict) -> Dict:
         """
         Prépare un document METAR pour l'insertion PostgreSQL
@@ -219,7 +320,6 @@ class PostgreSQLManager:
             'sea_level_pressure_mb': self._clean_numeric_value(
                 metar_doc.get('@sea_level_pressure_mb') or metar_doc.get('sea_level_pressure_mb'), 2
             ),
-            'sky_cover': metar_doc.get('@sky_cover') or metar_doc.get('sky_cover'),
             'flight_category': metar_doc.get('@flight_category') or metar_doc.get('flight_category'),
             'maxt_c': self._clean_numeric_value(
                 metar_doc.get('@maxt_c') or metar_doc.get('maxt_c')
@@ -240,10 +340,6 @@ class PostgreSQLManager:
             'precip_in': self._clean_numeric_value(
                 metar_doc.get('@precip_in') or metar_doc.get('precip_in'), 3
             ),
-            'sky_condition_cloud_base_ft_agl': self._clean_integer_value(
-                metar_doc.get('@sky_condition_cloud_base_ft_agl') or metar_doc.get('sky_condition_cloud_base_ft_agl')
-            ),
-            'sky_condition_sky_cover': metar_doc.get('@sky_condition_sky_cover') or metar_doc.get('sky_condition_sky_cover'),
             'three_hr_pressure_tendency_mb': self._clean_numeric_value(
                 metar_doc.get('@three_hr_pressure_tendency_mb') or metar_doc.get('three_hr_pressure_tendency_mb'), 2
             ),
@@ -252,6 +348,10 @@ class PostgreSQLManager:
             ),
             'wx_string': metar_doc.get('@wx_string') or metar_doc.get('wx_string')
         }
+        
+        # Ajouter les conditions de ciel multiples
+        sky_conditions = self._parse_sky_conditions(metar_doc)
+        data.update(sky_conditions)
         
         # Vérifier les champs obligatoires
         if not data['metar_id'] or not data['station_id']:
@@ -308,11 +408,6 @@ class PostgreSQLManager:
                 taf_doc.get('forecast_@vert_vis_ft') or taf_doc.get('forecast_vert_vis_ft')
             ),
             'wx_string': taf_doc.get('forecast_@wx_string') or taf_doc.get('forecast_wx_string'),
-            'sky_cover': taf_doc.get('forecast_@sky_cover') or taf_doc.get('forecast_sky_cover'),
-            'cloud_base_ft_agl': self._clean_integer_value(
-                taf_doc.get('forecast_@cloud_base_ft_agl') or taf_doc.get('forecast_cloud_base_ft_agl')
-            ),
-            'cloud_type': taf_doc.get('forecast_@cloud_type') or taf_doc.get('forecast_cloud_type'),
             'altim_in_hg': self._clean_numeric_value(
                 taf_doc.get('forecast_@altim_in_hg') or taf_doc.get('forecast_altim_in_hg')
             ),
@@ -334,6 +429,65 @@ class PostgreSQLManager:
             raise ValueError(f"Champs obligatoires manquants: id={data['id']}, station_id={data['station_id']}")
         
         return data
+    
+    def _insert_sky_conditions(self, sky_conditions: List[Dict], metar_id: str = None, taf_id: str = None) -> int:
+        """
+        Insère les conditions de ciel dans la table sky_condition
+        
+        Args:
+            sky_conditions: Liste des conditions de ciel
+            metar_id: ID du METAR (optionnel)
+            taf_id: ID du TAF (optionnel)
+            
+        Returns:
+            int: Nombre de conditions insérées
+        """
+        if not sky_conditions or not self.connection:
+            return 0
+        
+        inserted_count = 0
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor()
+            
+            insert_query = """
+                INSERT INTO sky_condition (
+                    metar_id, taf_id, sky_cover, cloud_base_ft_agl, cloud_type, condition_order
+                ) VALUES (
+                    %(metar_id)s, %(taf_id)s, %(sky_cover)s, %(cloud_base_ft_agl)s, %(cloud_type)s, %(condition_order)s
+                )
+            """
+            
+            for condition in sky_conditions:
+                try:
+                    condition_data = {
+                        'metar_id': metar_id,
+                        'taf_id': taf_id,
+                        'sky_cover': condition['sky_cover'],
+                        'cloud_base_ft_agl': condition['cloud_base_ft_agl'],
+                        'cloud_type': condition.get('cloud_type'),
+                        'condition_order': condition['condition_order']
+                    }
+                    
+                    cursor.execute(insert_query, condition_data)
+                    
+                    if cursor.rowcount > 0:
+                        inserted_count += 1
+                        
+                except Exception as e:
+                    self.logger.warning(f"Erreur insertion sky_condition: {e}")
+                    continue
+            
+            return inserted_count
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de l'insertion des sky_conditions: {e}")
+            return 0
+        
+        finally:
+            if cursor:
+                cursor.close()
     
     def insert_metar_batch(self, metar_docs: List[Dict]) -> int:
         """
@@ -362,17 +516,15 @@ class PostgreSQLManager:
                 INSERT INTO metar (
                     metar_id, observation_time, raw_text, station_id, wind_dir_degrees,
                     temp_c, dewpoint_c, wind_speed_kt, wind_gust_kt, visibility_statute_mi,
-                    altim_in_hg, sea_level_pressure_mb, sky_cover, flight_category,
+                    altim_in_hg, sea_level_pressure_mb, flight_category,
                     maxt_c, mint_c, metar_type, pcp3hr_in, pcp6hr_in, pcp24hr_in,
-                    precip_in, sky_condition_cloud_base_ft_agl, sky_condition_sky_cover,
-                    three_hr_pressure_tendency_mb, vert_vis_ft, wx_string
+                    precip_in, three_hr_pressure_tendency_mb, vert_vis_ft, wx_string
                 ) VALUES (
                     %(metar_id)s, %(observation_time)s, %(raw_text)s, %(station_id)s, %(wind_dir_degrees)s,
                     %(temp_c)s, %(dewpoint_c)s, %(wind_speed_kt)s, %(wind_gust_kt)s, %(visibility_statute_mi)s,
-                    %(altim_in_hg)s, %(sea_level_pressure_mb)s, %(sky_cover)s, %(flight_category)s,
+                    %(altim_in_hg)s, %(sea_level_pressure_mb)s, %(flight_category)s,
                     %(maxt_c)s, %(mint_c)s, %(metar_type)s, %(pcp3hr_in)s, %(pcp6hr_in)s, %(pcp24hr_in)s,
-                    %(precip_in)s, %(sky_condition_cloud_base_ft_agl)s, %(sky_condition_sky_cover)s,
-                    %(three_hr_pressure_tendency_mb)s, %(vert_vis_ft)s, %(wx_string)s
+                    %(precip_in)s, %(three_hr_pressure_tendency_mb)s, %(vert_vis_ft)s, %(wx_string)s
                 )
                 ON CONFLICT (metar_id) DO NOTHING
             """
@@ -384,6 +536,15 @@ class PostgreSQLManager:
                     
                     if cursor.rowcount > 0:
                         inserted_count += 1
+                        
+                        # Insérer les conditions de ciel dans la table séparée
+                        sky_conditions = self._extract_sky_conditions(metar_doc)
+                        if sky_conditions:
+                            sky_inserted = self._insert_sky_conditions(
+                                sky_conditions, 
+                                metar_id=prepared_data['metar_id']
+                            )
+                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour METAR {prepared_data['metar_id']}")
                         
                 except Exception as e:
                     self.logger.warning(f"Erreur insertion METAR {metar_doc.get('_id', 'unknown')}: {e}")
@@ -430,14 +591,14 @@ class PostgreSQLManager:
                 INSERT INTO taf (
                     id, station_id, issue_time, bulletin_time, valid_time_from, valid_time_to,
                     remarks, fcst_time_from, fcst_time_to, wind_dir_degrees, wind_speed_kt,
-                    wind_gust_kt, visibility_statute_mi, vert_vis_ft, wx_string, sky_cover,
-                    cloud_base_ft_agl, cloud_type, altim_in_hg, change_indicator, probability,
+                    wind_gust_kt, visibility_statute_mi, vert_vis_ft, wx_string,
+                    altim_in_hg, change_indicator, probability,
                     max_temp_c, min_temp_c, raw_text
                 ) VALUES (
                     %(id)s, %(station_id)s, %(issue_time)s, %(bulletin_time)s, %(valid_time_from)s, %(valid_time_to)s,
                     %(remarks)s, %(fcst_time_from)s, %(fcst_time_to)s, %(wind_dir_degrees)s, %(wind_speed_kt)s,
-                    %(wind_gust_kt)s, %(visibility_statute_mi)s, %(vert_vis_ft)s, %(wx_string)s, %(sky_cover)s,
-                    %(cloud_base_ft_agl)s, %(cloud_type)s, %(altim_in_hg)s, %(change_indicator)s, %(probability)s,
+                    %(wind_gust_kt)s, %(visibility_statute_mi)s, %(vert_vis_ft)s, %(wx_string)s,
+                    %(altim_in_hg)s, %(change_indicator)s, %(probability)s,
                     %(max_temp_c)s, %(min_temp_c)s, %(raw_text)s
                 )
                 ON CONFLICT (id) DO NOTHING
@@ -450,6 +611,15 @@ class PostgreSQLManager:
                     
                     if cursor.rowcount > 0:
                         inserted_count += 1
+                        
+                        # Insérer les conditions de ciel dans la table séparée
+                        sky_conditions = self._extract_sky_conditions(taf_doc, "forecast_")
+                        if sky_conditions:
+                            sky_inserted = self._insert_sky_conditions(
+                                sky_conditions, 
+                                taf_id=prepared_data['id']
+                            )
+                            self.logger.debug(f"✓ {sky_inserted} conditions de ciel insérées pour TAF {prepared_data['id']}")
                         
                 except Exception as e:
                     self.logger.warning(f"Erreur insertion TAF {taf_doc.get('_id', 'unknown')}: {e}")

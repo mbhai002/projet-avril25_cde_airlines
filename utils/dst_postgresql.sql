@@ -40,7 +40,6 @@ CREATE TABLE metar (
     altim_in_hg NUMERIC(5,2),
     sea_level_pressure_mb NUMERIC(6,2),
 
-    sky_cover VARCHAR(50),
     flight_category VARCHAR(10),
     maxt_c NUMERIC(5,2),
     mint_c NUMERIC(5,2),
@@ -51,14 +50,10 @@ CREATE TABLE metar (
     pcp24hr_in NUMERIC(6,3),
     precip_in NUMERIC(6,3),
 
-    sky_condition_cloud_base_ft_agl INTEGER,
-    sky_condition_sky_cover VARCHAR(50),
-
     three_hr_pressure_tendency_mb NUMERIC(6,2),
     vert_vis_ft INTEGER,
     wx_string VARCHAR(255)
 );
-
 
 
 CREATE TABLE taf (
@@ -80,9 +75,6 @@ CREATE TABLE taf (
     vert_vis_ft INTEGER,
 
     wx_string VARCHAR(255),     -- phénomènes météo (RA, SN, BR, etc.)
-    sky_cover VARCHAR(50),
-    cloud_base_ft_agl INTEGER,
-    cloud_type VARCHAR(50),
 
     altim_in_hg NUMERIC(5,2),
 
@@ -93,4 +85,26 @@ CREATE TABLE taf (
     min_temp_c NUMERIC(5,2),
 
     raw_text TEXT NOT NULL          -- TAF complet en texte brut
+);
+
+
+
+
+CREATE TABLE sky_condition (
+    id BIGSERIAL PRIMARY KEY,
+    metar_id VARCHAR(25),
+    taf_id VARCHAR(72),
+    sky_cover VARCHAR(50) NOT NULL,
+    cloud_base_ft_agl INTEGER,
+    cloud_type VARCHAR(50),
+    condition_order SMALLINT NOT NULL, -- ordre de la condition (1, 2, 3, 4)
+    
+    FOREIGN KEY (metar_id) REFERENCES metar(metar_id) ON DELETE CASCADE,
+    FOREIGN KEY (taf_id) REFERENCES taf(id) ON DELETE CASCADE,
+    
+    -- Contrainte pour s'assurer qu'une condition appartient soit à METAR soit à TAF, mais pas les deux
+    CONSTRAINT chk_single_parent CHECK (
+        (metar_id IS NOT NULL AND taf_id IS NULL) OR 
+        (metar_id IS NULL AND taf_id IS NOT NULL)
+    )
 );

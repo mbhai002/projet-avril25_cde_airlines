@@ -223,14 +223,14 @@ class TafXmlCollector:
                         doc["_id"] = f"taf_{len(documents)}_base"
                     
                     # Ajouter des métadonnées
-                    doc.update({
-                        "_metadata_source": "aviationweather.gov",
-                        "_metadata_data_type": "TAF_BASE",
-                        "_metadata_file_downloaded_at": datetime.now(),
-                        "_metadata_xml_file": os.path.basename(xml_filepath),
-                        "_metadata_total_fields": len(doc),
-                        "_metadata_forecast_index": None
-                    })
+                    doc["_metadata"] = {
+                        "source": "aviationweather.gov",
+                        "data_type": "TAF_BASE",
+                        "file_downloaded_at": datetime.now(),
+                        "xml_file": os.path.basename(xml_filepath),
+                        "total_fields": len(doc),
+                        "forecast_index": None
+                    }
                     
                     documents.append(doc)
                 else:
@@ -264,14 +264,14 @@ class TafXmlCollector:
                             doc["_id"] = f"taf_{len(documents)}_f{forecast_idx}"
                         
                         # Ajouter des métadonnées
-                        doc.update({
-                            "_metadata_source": "aviationweather.gov",
-                            "_metadata_data_type": "TAF_FORECAST",
-                            "_metadata_file_downloaded_at": datetime.now(),
-                            "_metadata_xml_file": os.path.basename(xml_filepath),
-                            "_metadata_total_fields": len(doc),
-                            "_metadata_forecast_index": forecast_idx
-                        })
+                        doc["_metadata"] = {
+                            "source": "aviationweather.gov",
+                            "data_type": "TAF_FORECAST",
+                            "file_downloaded_at": datetime.now(),
+                            "xml_file": os.path.basename(xml_filepath),
+                            "total_fields": len(doc),
+                            "forecast_index": forecast_idx
+                        }
                         
                         documents.append(doc)
             
@@ -280,14 +280,14 @@ class TafXmlCollector:
             # Afficher quelques infos sur les documents si disponibles
             if documents:
                 # Compter les types de documents
-                base_docs = sum(1 for doc in documents if doc.get('_metadata_data_type') == 'TAF_BASE')
-                forecast_docs = sum(1 for doc in documents if doc.get('_metadata_data_type') == 'TAF_FORECAST')
+                base_docs = sum(1 for doc in documents if doc.get('_metadata', {}).get('data_type') == 'TAF_BASE')
+                forecast_docs = sum(1 for doc in documents if doc.get('_metadata', {}).get('data_type') == 'TAF_FORECAST')
                 
                 self.logger.info(f"Documents de base TAF: {base_docs}")
                 self.logger.info(f"Documents de forecast: {forecast_docs}")
                 
                 # Exemple de forecast
-                forecast_doc = next((doc for doc in documents if doc.get('_metadata_data_type') == 'TAF_FORECAST'), None)
+                forecast_doc = next((doc for doc in documents if doc.get('_metadata', {}).get('data_type') == 'TAF_FORECAST'), None)
                 if forecast_doc:
                     station_id = forecast_doc.get('@station_id') or forecast_doc.get('station_id')
                     issue_time = forecast_doc.get('@issue_time') or forecast_doc.get('issue_time')
@@ -369,14 +369,14 @@ if __name__ == "__main__":
         logger.info(f"{len(taf_documents)} documents TAF récupérés")
         
         # Compter les types de documents
-        base_docs = sum(1 for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_BASE')
-        forecast_docs = sum(1 for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_FORECAST')
+        base_docs = sum(1 for doc in taf_documents if doc.get('_metadata', {}).get('data_type') == 'TAF_BASE')
+        forecast_docs = sum(1 for doc in taf_documents if doc.get('_metadata', {}).get('data_type') == 'TAF_FORECAST')
         
         logger.info(f"Documents de base: {base_docs}")
         logger.info(f"Documents de forecast: {forecast_docs}")
         
         # Afficher quelques exemples
-        forecast_examples = [doc for doc in taf_documents if doc.get('_metadata_data_type') == 'TAF_FORECAST'][:3]
+        forecast_examples = [doc for doc in taf_documents if doc.get('_metadata', {}).get('data_type') == 'TAF_FORECAST'][:3]
         for i, doc in enumerate(forecast_examples):
             station_id = doc.get('@station_id') or doc.get('station_id', 'N/A')
             fcst_from = doc.get('forecast_@fcst_time_from') or doc.get('forecast_fcst_time_from', 'N/A')
