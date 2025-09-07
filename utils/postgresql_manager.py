@@ -712,6 +712,7 @@ class PostgreSQLManager:
             
             # Statut et retard
             'status': flight_doc.get('status'),
+            'status_final': None,  # Sera rempli lors de la mise à jour avec les données réelles
             'delay_min': self._calculate_delay_minutes(flight_doc)
         }
         
@@ -798,14 +799,14 @@ class PostgreSQLManager:
                     departure_terminal, departure_gate,
                     arrival_taf_external_id, arrival_scheduled_utc, arrival_actual_utc, 
                     arrival_terminal, arrival_gate,
-                    status, delay_min
+                    status, status_final, delay_min
                 ) VALUES (
                     %(flight_number)s, %(from_airport)s, %(to_airport)s, %(airline_code)s, %(aircraft_code)s,
                     %(departure_metar_external_id)s, %(departure_scheduled_utc)s, %(departure_actual_utc)s, 
                     %(departure_terminal)s, %(departure_gate)s,
                     %(arrival_taf_external_id)s, %(arrival_scheduled_utc)s, %(arrival_actual_utc)s, 
                     %(arrival_terminal)s, %(arrival_gate)s,
-                    %(status)s, %(delay_min)s
+                    %(status)s, %(status_final)s, %(delay_min)s
                 )
                 ON CONFLICT DO NOTHING
             """
@@ -923,7 +924,7 @@ class PostgreSQLManager:
                 UPDATE flight SET
                     departure_actual_utc = %(departure_actual_utc)s,
                     arrival_actual_utc = %(arrival_actual_utc)s,
-                    status = %(status)s,
+                    status_final = %(status_final)s,
                     delay_min = %(delay_min)s
                 WHERE flight_number = %(flight_number)s 
                   AND from_airport = %(from_airport)s 
@@ -947,7 +948,7 @@ class PostgreSQLManager:
                         'departure_scheduled_utc': self._format_timestamp(
                             flight_doc.get('departure', {}).get('scheduled_utc')
                         ),
-                        'status': flight_doc.get('status'),
+                        'status_final': flight_doc.get('status'),
                         'delay_min': flight_doc.get('arrival', {}).get('delay', {}).get('minutes')
                     }
                     

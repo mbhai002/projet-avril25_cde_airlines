@@ -1,3 +1,37 @@
+-- Table de référence pour les codes de couverture nuageuse
+CREATE TABLE sky_cover_reference (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(10) UNIQUE NOT NULL,       -- Code METAR/TAF (FEW, SCT, BKN, OVC, etc.)
+    description VARCHAR(100) NOT NULL,      -- Description en français
+    description_en VARCHAR(100) NOT NULL,   -- Description en anglais
+    octal_min DECIMAL(2,1),                 -- Couverture minimale en octals (1/8)
+    octal_max DECIMAL(2,1),                 -- Couverture maximale en octals (1/8)
+    percentage_min INTEGER,                 -- Pourcentage de couverture minimum
+    percentage_max INTEGER,                 -- Pourcentage de couverture maximum
+    is_special_code BOOLEAN DEFAULT FALSE,  -- Indique si c'est un code spécial (NSC, SKC, etc.)
+    sort_order INTEGER,                     -- Ordre de tri pour affichage
+    notes TEXT                              -- Notes additionnelles
+);
+
+-- Insertion des données de référence pour les codes de couverture nuageuse
+INSERT INTO sky_cover_reference (code, description, description_en, octal_min, octal_max, percentage_min, percentage_max, is_special_code, sort_order, notes) VALUES
+-- Codes standards de couverture
+('FEW', 'Peu de nuages', 'Few clouds', 1.0, 2.0, 12, 25, FALSE, 1, 'Couverture nuageuse de 1/8 à 2/8'),
+('SCT', 'Nuages épars', 'Scattered clouds', 3.0, 4.0, 37, 50, FALSE, 2, 'Couverture nuageuse de 3/8 à 4/8'),
+('BKN', 'Ciel fragmenté', 'Broken clouds', 5.0, 7.0, 62, 87, FALSE, 3, 'Couverture nuageuse de 5/8 à 7/8'),
+('OVC', 'Ciel couvert', 'Overcast clouds', 8.0, 8.0, 100, 100, FALSE, 4, 'Couverture nuageuse complète 8/8'),
+
+-- Codes spéciaux
+('NSC', 'Pas de nuages significatifs', 'No significant cloud cover', NULL, NULL, NULL, NULL, TRUE, 10, 'Aucun nuage en dessous de 5000 ft, mais présence possible au-dessus (non CB/TCU)'),
+('SKC', 'Ciel dégagé', 'Sky clear', 0.0, 0.0, 0, 0, TRUE, 11, 'Aucune couverture nuageuse (déterminé par météorologue)'),
+('NCD', 'Nuages non détectés', 'No clouds detected', NULL, NULL, NULL, NULL, TRUE, 12, 'Aucun nuage mesuré (stations météo automatiques)'),
+('CLR', 'Ciel dégagé détecté', 'Clear sky detected', 0.0, 0.0, 0, 0, TRUE, 13, 'Aucune couverture nuageuse détectée en dessous de 12000 ft (stations automatiques)'),
+
+-- Code pour visibilité verticale
+('VV', 'Visibilité verticale', 'Vertical visibility', NULL, NULL, NULL, NULL, TRUE, 20, 'Visibilité verticale obscurcie, base nuageuse impossible à établir');
+
+
+
 CREATE TABLE flight (
     id BIGSERIAL PRIMARY KEY,
     flight_number VARCHAR(20) NOT NULL,
@@ -24,7 +58,8 @@ CREATE TABLE flight (
     arrival_terminal VARCHAR(10),
     arrival_gate VARCHAR(10),
 
-    status VARCHAR(200),
+    status VARCHAR(200),                 -- Statut initial du vol (lors de l'insertion)
+    status_final VARCHAR(200),           -- Statut final du vol (mis à jour avec les données réelles)
     delay_min INTEGER
 );
 
@@ -109,6 +144,7 @@ CREATE TABLE sky_condition (
     
     FOREIGN KEY (metar_fk) REFERENCES metar(id) ON DELETE CASCADE,
     FOREIGN KEY (taf_fk) REFERENCES taf(id) ON DELETE CASCADE,
+    FOREIGN KEY (sky_cover) REFERENCES sky_cover_reference(code) ON DELETE RESTRICT,
     
     -- Contrainte pour s'assurer qu'une condition appartient soit à METAR soit à TAF, mais pas les deux
     CONSTRAINT chk_single_parent CHECK (
@@ -117,7 +153,102 @@ CREATE TABLE sky_condition (
     )
 );
 
+
 -- Ajout des contraintes de clés étrangères pour flight (après création des tables)
 ALTER TABLE flight 
     ADD CONSTRAINT fk_flight_metar FOREIGN KEY (departure_metar_fk) REFERENCES metar(id),
     ADD CONSTRAINT fk_flight_taf FOREIGN KEY (arrival_taf_fk) REFERENCES taf(id);
+
+CREATE INDEX IF NOT EXISTS sc_metar_ord1
+  ON sky_condition (metar_fk, condition_order)
+  WHERE metar_fk IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS sc_taf_ord1
+  ON sky_condition (taf_fk, condition_order)
+  WHERE taf_fk IS NOT NULL;
+
+
+
+
+
+
+
+CREATE OR REPLACE VIEW public."all"
+ AS
+ SELECT f.id AS f_id,
+    f.flight_number,
+    f.from_airport,
+    f.to_airport,
+    f.airline_code,
+    f.aircraft_code,
+    f.departure_metar_fk,
+    f.arrival_taf_fk,
+    f.departure_scheduled_utc,
+    f.departure_actual_utc,
+    f.departure_terminal,
+    f.departure_gate,
+    f.arrival_scheduled_utc,
+    f.arrival_actual_utc,
+    f.arrival_terminal,
+    f.arrival_gate,
+    f.status,
+    f.status_final,
+    f.delay_min,
+    m.observation_time,
+    m.station_id AS m_station_id,
+    m.wind_dir_degrees,
+    m.temp_c,
+    m.dewpoint_c,
+    m.wind_speed_kt,
+    m.wind_gust_kt,
+    m.visibility_statute_mi,
+    m.altim_in_hg,
+    m.sea_level_pressure_mb,
+    m.flight_category,
+    m.maxt_c,
+    m.mint_c,
+    m.metar_type,
+    m.pcp3hr_in,
+    m.pcp6hr_in,
+    m.pcp24hr_in,
+    m.precip_in,
+    m.three_hr_pressure_tendency_mb,
+    m.vert_vis_ft,
+    m.wx_string,
+    msc.sky_cover AS msc_sky_cover,
+    mscr.description AS msc_sky_cover_description,
+    msc.cloud_base_ft_agl AS msc_cloud_base_ft_agl,
+    msc.cloud_type AS msc_cloud_type,
+    t.station_id AS t_station_id,
+    t.issue_time,
+    t.bulletin_time,
+    t.valid_time_from,
+    t.valid_time_to,
+    t.remarks,
+    t.fcst_time_from,
+    t.fcst_time_to,
+    t.wind_dir_degrees AS t_wind_dir_degrees,
+    t.wind_speed_kt AS t_wind_speed_kt,
+    t.wind_gust_kt AS t_wind_gust_kt,
+    t.visibility_statute_mi AS t_visibility_statute_mi,
+    t.vert_vis_ft AS t_vert_vis_ft,
+    t.wx_string AS t_wx_string,
+    t.altim_in_hg AS t_altim_in_hg,
+    t.change_indicator,
+    t.probability,
+    t.max_temp_c,
+    t.min_temp_c,
+    tsc.sky_cover AS tsc_sky_cover,
+    tscr.description AS tsc_sky_cover_description,
+    tsc.cloud_base_ft_agl AS tsc_cloud_base_ft_agl,
+    tsc.cloud_type AS tsc_cloud_type
+   FROM flight f
+     LEFT JOIN metar m ON f.departure_metar_fk = m.id
+     LEFT JOIN sky_condition msc ON msc.metar_fk = m.id AND msc.condition_order = 1
+     LEFT JOIN sky_cover_reference mscr ON msc.sky_cover::text = mscr.code::text
+     LEFT JOIN taf t ON f.arrival_taf_fk = t.id
+     LEFT JOIN sky_condition tsc ON tsc.taf_fk = t.id AND tsc.condition_order = 1
+     LEFT JOIN sky_cover_reference tscr ON tsc.sky_cover::text = tscr.code::text;
+
+ALTER TABLE public."all"
+    OWNER TO postgres;
