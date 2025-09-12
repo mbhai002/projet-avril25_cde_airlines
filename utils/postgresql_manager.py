@@ -322,10 +322,10 @@ class PostgreSQLManager:
             ),
             'flight_category': metar_doc.get('@flight_category') or metar_doc.get('flight_category'),
             'maxt_c': self._clean_numeric_value(
-                metar_doc.get('@maxt_c') or metar_doc.get('maxt_c')
+                metar_doc.get('@maxT_c') or metar_doc.get('maxT_c')
             ),
             'mint_c': self._clean_numeric_value(
-                metar_doc.get('@mint_c') or metar_doc.get('mint_c')
+                metar_doc.get('@minT_c') or metar_doc.get('minT_c')
             ),
             'metar_type': metar_doc.get('@metar_type') or metar_doc.get('metar_type'),
             'pcp3hr_in': self._clean_numeric_value(

@@ -34,7 +34,7 @@ def create_my_config() -> CollectionConfig:
         batch_size=500,
         enable_weather=True,  
         hour_offset=1,          # Décalage pour vols temps réel
-        past_hour_offset=-15,   # Décalage pour vols passés
+        past_hour_offset=-20,   # Décalage pour vols passés
         
         # Comportement - Modifiez selon vos besoins
         run_once=False,              # True = une fois, False = en boucle
