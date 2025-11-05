@@ -695,7 +695,7 @@ class PostgreSQLManager:
                 flight_doc.get('departure', {}).get('scheduled_utc')
             ),
             'departure_actual_utc': self._format_timestamp(
-                flight_doc.get('departure', {}).get('actual_utc')
+                flight_doc.get('departure', {}).get('estimated_utc')
             ),
             'departure_terminal': flight_doc.get('departure', {}).get('terminal'),
             'departure_gate': flight_doc.get('departure', {}).get('gate'),
@@ -705,7 +705,7 @@ class PostgreSQLManager:
                 flight_doc.get('arrival', {}).get('scheduled_utc')
             ),
             'arrival_actual_utc': self._format_timestamp(
-                flight_doc.get('arrival', {}).get('actual_utc')
+                flight_doc.get('arrival', {}).get('estimated_utc')
             ),
             'arrival_terminal': flight_doc.get('arrival', {}).get('terminal'),
             'arrival_gate': flight_doc.get('arrival', {}).get('gate'),
@@ -922,7 +922,7 @@ class PostgreSQLManager:
             # Requête de mise à jour basée sur flight_number + from_airport + to_airport
             update_query = """
                 UPDATE flight SET
-                    departure_actual_utc = %(departure_actual_utc)s,
+                    departure_final_utc = %(departure_actual_utc)s,
                     arrival_actual_utc = %(arrival_actual_utc)s,
                     status_final = %(status_final)s,
                     delay_min = %(delay_min)s

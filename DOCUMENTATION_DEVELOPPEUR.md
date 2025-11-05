@@ -353,3 +353,8 @@ En cas de problème :
 
 **Version** : 2.0  
 **Dernière mise à jour** : Septembre 2025
+
+
+cd C:\01_dev_clb\python\projet-avril25_cde_airlines - 2
+.venv\Scripts\activate.bat
+python main.py

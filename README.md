@@ -10,4 +10,9 @@ python -m venv .venv (creates virtual environment)
 .venv\Scripts\activate (activates environment on Windows)
 pip install -r requirements.txt (installs packages)
 
-.venv/Scripts/python.exe c:/01_dev_clb/python/projet-avril25_cde_airlines/main.py
+.venv/Scripts/activate
+.venv/Scripts/python.exe c:/01_dev_clb/python/projet-avril25_cde_airlines - 2/main.py
+
+
+sous Windows : 
+.venv\Scripts\activate.bat

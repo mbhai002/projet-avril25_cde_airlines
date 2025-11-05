@@ -22,11 +22,11 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst",
+        database_name="dst2",
 
         # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst3",
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",
 
         # Collecte
         num_airports=200,

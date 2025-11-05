@@ -50,6 +50,7 @@ CREATE TABLE flight (
     
     departure_scheduled_utc TIMESTAMP WITHOUT TIME ZONE,
     departure_actual_utc TIMESTAMP WITHOUT TIME ZONE,
+    departure_final_utc TIMESTAMP WITHOUT TIME ZONE,
     departure_terminal VARCHAR(10),
     departure_gate VARCHAR(10),
 
@@ -60,7 +61,9 @@ CREATE TABLE flight (
 
     status VARCHAR(200),                 -- Statut initial du vol (lors de l'insertion)
     status_final VARCHAR(200),           -- Statut final du vol (mis à jour avec les données réelles)
-    delay_min INTEGER
+    delay_min INTEGER,
+    delay_prob NUMERIC(5,4),
+    delay_risk_level VARCHAR(20)
 );
 
 
@@ -144,7 +147,7 @@ CREATE TABLE sky_condition (
     
     FOREIGN KEY (metar_fk) REFERENCES metar(id) ON DELETE CASCADE,
     FOREIGN KEY (taf_fk) REFERENCES taf(id) ON DELETE CASCADE,
-    FOREIGN KEY (sky_cover) REFERENCES sky_cover_reference(code) ON DELETE RESTRICT,
+    --FOREIGN KEY (sky_cover) REFERENCES sky_cover_reference(code) ON DELETE RESTRICT,
     
     -- Contrainte pour s'assurer qu'une condition appartient soit à METAR soit à TAF, mais pas les deux
     CONSTRAINT chk_single_parent CHECK (
@@ -167,7 +170,14 @@ CREATE INDEX IF NOT EXISTS sc_taf_ord1
   ON sky_condition (taf_fk, condition_order)
   WHERE taf_fk IS NOT NULL;
 
+-- Index composite optimal pour les mises à jour de vols
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_flight_update_lookup 
+ON flight (flight_number, from_airport, to_airport, departure_scheduled_utc);
 
+-- Index partiel pour les vols pas encore mis à jour (optionnel mais très utile)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_flight_pending_updates 
+ON flight (flight_number, from_airport, to_airport) 
+WHERE status_final IS NULL;
 
 
 
