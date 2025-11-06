@@ -22,6 +22,9 @@ class ExecutionManager:
     Responsabilité : Exécuter selon la configuration (une fois ou en boucle)
     """
     
+    # Constante pour la pause entre les étapes
+    STEP_PAUSE_SECONDS = 2
+    
     def __init__(self, config: CollectionConfig):
         """
         Initialise le gestionnaire d'exécution
@@ -71,8 +74,8 @@ class ExecutionManager:
             print("Collecteur arrêté.")
     
     def _execute_complete_workflow(self):
-        """Exécute une collecte combinée - LES 7 ÉTAPES AVEC SESSION_ID GLOBAL"""
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte COMPLÈTE (7 étapes)...")
+        """Exécute une collecte combinée - LES 8 ÉTAPES AVEC SESSION_ID GLOBAL"""
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Début de collecte COMPLÈTE (jusqu'à 8 étapes selon config)...")
         start_time = datetime.now()
         
         # Générer un session_id global unique pour toutes les étapes
@@ -81,7 +84,8 @@ class ExecutionManager:
         
         orchestrator = FlightOrchestrator(self.config)
         
-        results_realtime = results_weather = results_past =  None
+        # Initialisation des résultats pour toutes les étapes
+        results_realtime = results_weather = results_past = None
         results_association_metar = results_association_taf = results_postgres = results_ml = results_update = None
         
         # ÉTAPE 1: Collecte vols temps réel
@@ -93,7 +97,7 @@ class ExecutionManager:
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 1: {e}")
             
-            time.sleep(2)  # Pause entre les étapes
+            time.sleep(self.STEP_PAUSE_SECONDS)
         
         # ÉTAPE 2: Collecte données météo
         if self.config.enable_weather:
@@ -104,7 +108,7 @@ class ExecutionManager:
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 2: {e}")
             
-            time.sleep(2)  # Pause entre les étapes
+            time.sleep(self.STEP_PAUSE_SECONDS)
         
         # ÉTAPE 3: Collecte vols passés
         if self.config.collect_past:
@@ -116,7 +120,7 @@ class ExecutionManager:
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 3: {e}")
         
-        time.sleep(2)  # Pause entre les étapes
+        time.sleep(self.STEP_PAUSE_SECONDS)
         
         # ÉTAPE 4: Association vols-METAR
         if self.config.enable_weather and results_realtime and results_realtime.success and global_session_id:
@@ -129,7 +133,7 @@ class ExecutionManager:
         elif self.config.enable_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 4: Ignorée (pas de vols temps réel collectés)")
         
-        time.sleep(2)  # Pause entre les étapes
+        time.sleep(self.STEP_PAUSE_SECONDS)
         
         # ÉTAPE 5: Association vols-TAF
         if self.config.enable_weather and results_realtime and results_realtime.success and global_session_id:
@@ -142,7 +146,7 @@ class ExecutionManager:
         elif self.config.enable_weather and not global_session_id:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 5: Ignorée (pas de vols temps réel collectés)")
             
-        time.sleep(2)
+        time.sleep(self.STEP_PAUSE_SECONDS)
 
         # ÉTAPE 6: Insertion des données météo et des vols dans PostgreSQL
         if self.config.enable_postgresql_insertion and global_session_id and ((results_association_metar and results_association_metar.success) or (results_association_taf and results_association_taf.success)):
@@ -155,7 +159,7 @@ class ExecutionManager:
         elif self.config.enable_postgresql_insertion:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6: Ignorée (pas de session de vols ou d'association réussie)")
 
-        time.sleep(2)
+        time.sleep(self.STEP_PAUSE_SECONDS)
 
         # 🆕 ÉTAPE 6.5: Prédiction ML sur les vols nouvellement insérés
         if self.config.enable_ml_prediction and results_postgres and results_postgres.success and results_postgres.details and 'inserted_flight_ids' in results_postgres.details:
@@ -169,7 +173,7 @@ class ExecutionManager:
         elif self.config.enable_ml_prediction:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6.5: Ignorée (pas de vols insérés)")
 
-        time.sleep(2)
+        time.sleep(self.STEP_PAUSE_SECONDS)
 
         # ÉTAPE 7: Mise à jour des vols dans PostgreSQL avec les données passées
         if self.config.enable_postgresql_insertion and global_session_id and results_past and results_past.success:
@@ -185,7 +189,7 @@ class ExecutionManager:
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         
-        # Résumé global des 8 étapes
+        # Résumé global (jusqu'à 8 étapes selon configuration)
         etapes_reussies = []
         if results_realtime and results_realtime.success: etapes_reussies.append("temps réel")
         if results_weather and results_weather.success: etapes_reussies.append("météo")
