@@ -1,6 +1,6 @@
 {
-  "model_path": "machine learning\\model_output\\flight_delay_model_20251104_152726.joblib",
-  "preprocessor_path": "machine learning\\model_output\\preprocessor_20251104_152726.joblib",
+  "model_path": "machine_learning\\model_output\\flight_delay_model_20251104_152726.joblib",
+  "preprocessor_path": "machine_learning\\model_output\\preprocessor_20251104_152726.joblib",
   "optimal_threshold": 0.7518628239631653,
   "delay_threshold": 15,
   "risk_threshold_low": 0.545691967010498,

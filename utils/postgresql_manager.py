@@ -756,19 +756,19 @@ class PostgreSQLManager:
             self.logger.debug(f"Impossible de calculer le retard: {e}")
             return None
     
-    def insert_flights_batch(self, flight_docs: List[Dict]) -> int:
+    def insert_flights_batch(self, flight_docs: List[Dict]) -> tuple:
         """
-        Insère un lot de documents vol dans PostgreSQL
+        Insère un lot de documents vol dans PostgreSQL et retourne les IDs insérés
         Filtre automatiquement les vols qui ont un operated_by
         
         Args:
             flight_docs: Liste des documents vol à insérer
             
         Returns:
-            int: Nombre de documents insérés avec succès
+            tuple: (nombre_insérés, liste_des_ids_insérés)
         """
         if not flight_docs:
-            return 0
+            return 0, []
         
         # Filtrer les vols qui n'ont PAS de operated_by
         filtered_flights = [
@@ -778,15 +778,16 @@ class PostgreSQLManager:
         
         if not filtered_flights:
             self.logger.info("Aucun vol à insérer (tous ont un operated_by)")
-            return 0
+            return 0, []
         
         self.logger.info(f"Insertion de {len(filtered_flights)} vols (sur {len(flight_docs)} total, {len(flight_docs) - len(filtered_flights)} filtrés)")
         
         if not self.test_connection():
             self.logger.error("Pas de connexion PostgreSQL pour l'insertion des vols")
-            return 0
+            return 0, []
         
         inserted_count = 0
+        inserted_ids = []
         cursor = None
         
         try:
@@ -809,6 +810,7 @@ class PostgreSQLManager:
                     %(status)s, %(status_final)s, %(delay_min)s
                 )
                 ON CONFLICT DO NOTHING
+                RETURNING id
             """
             
             for flight_doc in filtered_flights:
@@ -816,7 +818,10 @@ class PostgreSQLManager:
                     prepared_data = self._prepare_flight_data(flight_doc)
                     cursor.execute(insert_query, prepared_data)
                     
-                    if cursor.rowcount > 0:
+                    # Récupérer l'ID du vol inséré
+                    result = cursor.fetchone()
+                    if result:
+                        inserted_ids.append(result[0])
                         inserted_count += 1
                         
                 except Exception as e:
@@ -824,7 +829,7 @@ class PostgreSQLManager:
                     continue
             
             self.connection.commit()
-            self.logger.info(f"✓ {inserted_count} vols insérés dans PostgreSQL")
+            self.logger.info(f"✓ {inserted_count} vols insérés dans PostgreSQL (IDs: {len(inserted_ids)})")
             
         except Exception as e:
             if self.connection:
@@ -835,7 +840,7 @@ class PostgreSQLManager:
             if cursor:
                 cursor.close()
         
-        return inserted_count
+        return inserted_count, inserted_ids
     
     def update_flight_foreign_keys(self) -> int:
         """
@@ -1022,6 +1027,164 @@ class PostgreSQLManager:
         except Exception as e:
             self.logger.warning(f"Erreur calcul retard pour vol {flight_doc.get('flight_number', 'unknown')}: {e}")
             return None
+    
+    # ========================================================================
+    # MÉTHODES MACHINE LEARNING
+    # ========================================================================
+    
+    def fetch_flights_by_ids(self, flight_ids: List[int]):
+        """
+        Récupère les vols par leurs IDs depuis la vue "all"
+        
+        Args:
+            flight_ids: Liste des IDs de vols
+            
+        Returns:
+            DataFrame pandas avec les données des vols
+        
+        Raises:
+            Exception: Si pas de connexion ou erreur SQL
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas est requis pour cette méthode. Installez-le avec: pip install pandas")
+        
+        if not flight_ids:
+            self.logger.info("📊 Aucun ID de vol fourni")
+            return pd.DataFrame()
+        
+        if not self.test_connection():
+            raise Exception("Pas de connexion PostgreSQL")
+        
+        self.logger.info(f"📊 Récupération de {len(flight_ids)} vols par IDs depuis la view 'all'...")
+        
+        query = """
+            SELECT * FROM public."all"
+            WHERE f_id = ANY(%s)
+            ORDER BY f_id DESC
+        """
+        
+        try:
+            df = pd.read_sql_query(query, self.connection, params=(flight_ids,))
+            self.logger.info(f"✅ {len(df)} vols récupérés par IDs")
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors de la récupération des vols par IDs: {e}")
+            raise
+    
+    def fetch_last_n_flights(self, n: int = 1000):
+        """
+        Récupère les N dernières lignes de la view "all" pour prédiction ML
+        
+        Args:
+            n: Nombre de lignes à récupérer (défaut: 1000)
+        
+        Returns:
+            DataFrame pandas avec les données des vols
+        
+        Raises:
+            Exception: Si pas de connexion ou erreur SQL
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas est requis pour cette méthode. Installez-le avec: pip install pandas")
+        
+        if not self.test_connection():
+            raise Exception("Pas de connexion PostgreSQL")
+        
+        self.logger.info(f"📊 Récupération des {n} derniers vols depuis la view 'all'...")
+        
+        query = f"""
+            SELECT * FROM public."all"
+            ORDER BY f_id DESC
+            LIMIT {n}
+        """
+        
+        try:
+            df = pd.read_sql_query(query, self.connection)
+            self.logger.info(f"✅ {len(df)} lignes récupérées")
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors de la récupération des données: {e}")
+            raise
+    
+    def update_flight_predictions(self, predictions) -> int:
+        """
+        Met à jour les probabilités de retard et niveaux de risque dans la table flight
+        
+        Args:
+            predictions: DataFrame pandas avec colonnes:
+                        - f_id ou id: Identifiant du vol
+                        - delay_probability ou probability: Probabilité de retard (0-1)
+                        - risk_level: Niveau de risque ("Faible", "Modéré", "Élevé")
+        
+        Returns:
+            int: Nombre de lignes mises à jour
+        
+        Raises:
+            Exception: Si pas de connexion ou erreur SQL
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas est requis pour cette méthode. Installez-le avec: pip install pandas")
+        
+        if not self.test_connection():
+            raise Exception("Pas de connexion PostgreSQL")
+        
+        self.logger.info("💾 Mise à jour des probabilités et niveaux de risque dans PostgreSQL...")
+        
+        cursor = None
+        updated_count = 0
+        
+        try:
+            cursor = self.connection.cursor()
+            
+            # Détection automatique des noms de colonnes
+            id_col = 'f_id' if 'f_id' in predictions.columns else 'id'
+            prob_col = 'delay_probability' if 'delay_probability' in predictions.columns else 'probability'
+            risk_col = 'risk_level'
+            
+            # Requête UPDATE pour probabilité ET niveau de risque
+            update_query = "UPDATE flight SET delay_prob = %s, delay_risk_level = %s WHERE id = %s"
+            
+            for idx, row in predictions.iterrows():
+                try:
+                    flight_id = row[id_col]
+                    delay_prob = row[prob_col]
+                    risk_level = row.get(risk_col, None)
+                    
+                    if pd.notna(delay_prob):
+                        cursor.execute(update_query, (
+                            float(delay_prob), 
+                            risk_level if pd.notna(risk_level) else None,
+                            int(flight_id)
+                        ))
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Erreur vol {flight_id}: {e}")
+                    continue
+            
+            self.connection.commit()
+            self.logger.info(f"✅ {updated_count} lignes mises à jour (delay_prob + delay_risk_level)")
+            
+        except Exception as e:
+            if self.connection:
+                self.connection.rollback()
+            self.logger.error(f"❌ Erreur lors de la mise à jour: {e}")
+            raise
+            
+        finally:
+            if cursor:
+                cursor.close()
+        
+        return updated_count
 
 
 if __name__ == "__main__":

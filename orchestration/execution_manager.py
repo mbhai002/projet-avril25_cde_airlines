@@ -42,13 +42,13 @@ class ExecutionManager:
             self._run_loop()
     
     def _run_single(self):
-        """Exécute une collecte unique complète (7 étapes)"""
-        print("=== COLLECTE UNIQUE - Workflow complet (7 étapes) ===")
+        """Exécute une collecte unique complète"""
+        print("=== COLLECTE UNIQUE - Workflow complet ===")
         self._execute_complete_workflow()
     
     def _run_loop(self):
-        """Exécute en boucle le workflow complet (7 étapes)"""
-        print("=== MODE BOUCLE - Collecte complète (7 étapes) ===")
+        """Exécute en boucle le workflow complet"""
+        print("=== MODE BOUCLE - Collecte complète ===")
         print(f"Exécution toutes les {self.config.loop_interval_minutes} minutes à XX:{self.config.schedule_minute:02d}")
         print("Collecte les vols temps réel ET les vols passés à chaque exécution")
         print("Appuyez sur Ctrl+C pour arrêter\n")
@@ -82,7 +82,7 @@ class ExecutionManager:
         orchestrator = FlightOrchestrator(self.config)
         
         results_realtime = results_weather = results_past =  None
-        results_association_metar = results_association_taf = results_postgres = results_update = None
+        results_association_metar = results_association_taf = results_postgres = results_ml = results_update = None
         
         # ÉTAPE 1: Collecte vols temps réel
         if self.config.collect_realtime:
@@ -157,6 +157,20 @@ class ExecutionManager:
 
         time.sleep(2)
 
+        # 🆕 ÉTAPE 6.5: Prédiction ML sur les vols nouvellement insérés
+        if self.config.enable_ml_prediction and results_postgres and results_postgres.success and results_postgres.details and 'inserted_flight_ids' in results_postgres.details:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6.5: Prédiction ML sur vols insérés...")
+            try:
+                inserted_ids = results_postgres.details['inserted_flight_ids']
+                results_ml = orchestrator.predict_flights_ml(inserted_ids)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 6.5 {'réussie' if results_ml.success else 'échouée'}")
+            except Exception as e:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 6.5: {e}")
+        elif self.config.enable_ml_prediction:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6.5: Ignorée (pas de vols insérés)")
+
+        time.sleep(2)
+
         # ÉTAPE 7: Mise à jour des vols dans PostgreSQL avec les données passées
         if self.config.enable_postgresql_insertion and global_session_id and results_past and results_past.success:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Mise à jour vols PostgreSQL avec données passées...")
@@ -171,7 +185,7 @@ class ExecutionManager:
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         
-        # Résumé global des 7 étapes
+        # Résumé global des 8 étapes
         etapes_reussies = []
         if results_realtime and results_realtime.success: etapes_reussies.append("temps réel")
         if results_weather and results_weather.success: etapes_reussies.append("météo")
@@ -179,13 +193,16 @@ class ExecutionManager:
         if results_association_metar and results_association_metar.success and self.config.enable_weather: etapes_reussies.append("association-METAR")
         if results_association_taf and results_association_taf.success and self.config.enable_weather: etapes_reussies.append("association-TAF")
         if results_postgres and results_postgres.success and self.config.enable_postgresql_insertion: etapes_reussies.append("insertion-PostgreSQL")
-        if results_update and results_update.success and self.config.enable_postgresql_insertion: etapes_reussies.append("mise à jour des vols passés-PostgreSQL")
+        if results_ml and results_ml.success and self.config.enable_ml_prediction: etapes_reussies.append("prédiction-ML")
+        if results_update and results_update.success and self.config.enable_postgresql_insertion: etapes_reussies.append("mise à jour vols passés-PostgreSQL")
 
         total_etapes = 3  # Étapes de base (temps réel, météo, vols passés)
         if self.config.enable_weather:
             total_etapes += 2  # +2 pour associations METAR et TAF
         if self.config.enable_postgresql_insertion:
             total_etapes += 2  # +2 pour insertion et mise à jour PostgreSQL
+        if self.config.enable_ml_prediction:
+            total_etapes += 1  # +1 pour prédiction ML
         
         if len(etapes_reussies) == total_etapes:
             status = f"✓ succès complet ({len(etapes_reussies)}/{total_etapes} étapes)"

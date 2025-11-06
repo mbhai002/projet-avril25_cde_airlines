@@ -1141,8 +1141,11 @@ class FlightOrchestrator:
             }))
             
             if flights_session:
-                inserted_flights = self.pg_manager.insert_flights_batch(flights_session)
+                inserted_flights, inserted_ids = self.pg_manager.insert_flights_batch(flights_session)
                 self.logger.info(f"{inserted_flights} vols insérés dans PostgreSQL")
+                
+                # Stocker les IDs insérés dans les résultats pour l'étape ML
+                results.details = {'inserted_flight_ids': inserted_ids}
                 
                 # Mise à jour des clés étrangères après insertion
                 updated_fks = self.pg_manager.update_flight_foreign_keys()
@@ -1228,4 +1231,118 @@ class FlightOrchestrator:
             self.pg_manager.disconnect()
             self.mongo_manager.disconnect()
             
+        return results
+    
+    def predict_flights_ml(self, flight_ids: List[int]) -> CollectionResults:
+        """
+        ÉTAPE 6.5: Applique les prédictions ML sur les vols nouvellement insérés
+        
+        Args:
+            flight_ids: Liste des IDs de vols insérés dans PostgreSQL
+        
+        Returns:
+            Résultats de l'opération
+        """
+        from pathlib import Path
+        
+        operation_start_time = datetime.now()
+        
+        results = CollectionResults(
+            collection_session_id=f"ml_prediction_{operation_start_time.strftime('%Y%m%d_%H%M%S')}",
+            start_time=operation_start_time.isoformat()
+        )
+        
+        self.logger.info("=== ÉTAPE 6.5: PRÉDICTION ML ===")
+        self.logger.info(f"{len(flight_ids)} vols à prédire")
+        
+        if not flight_ids:
+            self.logger.info("Aucun vol à prédire")
+            results.success = True
+            return results
+        
+        try:
+            # Import du module ML
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from machine_learning.flight_delay_predictor import FlightDelayPredictor
+            
+            # Connexion PostgreSQL
+            if not self.pg_manager.connect():
+                results.errors.append("Échec connexion PostgreSQL")
+                return results
+            
+            # Récupérer les vols par IDs depuis la vue "all"
+            self.logger.info(f"📊 Récupération des {len(flight_ids)} vols depuis la vue 'all'...")
+            df_flights = self.pg_manager.fetch_flights_by_ids(flight_ids)
+            
+            if df_flights.empty:
+                self.logger.warning("Aucun vol récupéré pour prédiction")
+                self.pg_manager.disconnect()
+                results.success = True
+                return results
+            
+            self.logger.info(f"✅ {len(df_flights)} vols récupérés")
+            
+            # Déterminer le chemin du modèle
+            if self.config.ml_model_config_path:
+                model_config = self.config.ml_model_config_path
+            else:
+                # Chercher le modèle le plus récent
+                model_dir = Path(self.config.ml_model_dir)
+                if model_dir.exists():
+                    config_files = list(model_dir.glob("production_config_*.json"))
+                    if config_files:
+                        model_config = str(max(config_files, key=lambda p: p.stat().st_mtime))
+                    else:
+                        raise FileNotFoundError(f"Aucun fichier de configuration trouvé dans {model_dir}")
+                else:
+                    raise FileNotFoundError(f"Répertoire modèle introuvable: {model_dir}")
+            
+            self.logger.info(f"🤖 Chargement du modèle: {model_config}")
+            
+            # Charger le modèle
+            predictor = FlightDelayPredictor.load_model(model_config)
+            
+            # Chemin vers airports_ref.csv
+            airports_ref = Path(__file__).parent.parent / "utils" / "airports_ref.csv"
+            
+            # Générer les prédictions directement depuis le DataFrame
+            self.logger.info("🔮 Génération des prédictions...")
+            predictions = predictor.predict_from_dataframe(
+                df=df_flights,
+                airports_ref_path=str(airports_ref),
+                include_probability=True
+            )
+            
+            self.logger.info(f"✅ {len(predictions)} prédictions générées")
+            
+            if 'delay_probability' in predictions.columns:
+                self.logger.info(f"   Probabilité moyenne: {predictions['delay_probability'].mean():.2%}")
+            
+            if 'risk_level' in predictions.columns:
+                risk_counts = predictions['risk_level'].value_counts()
+                self.logger.info(f"   Distribution risque: {dict(risk_counts)}")
+            
+            # Mettre à jour PostgreSQL
+            self.logger.info("💾 Mise à jour des prédictions dans PostgreSQL...")
+            updated_count = self.pg_manager.update_flight_predictions(predictions)
+            
+            # Remplir les résultats ML
+            results.ml_predictions_generated = len(predictions)
+            results.ml_predictions_saved = updated_count
+            results.ml_avg_delay_probability = float(predictions['delay_probability'].mean()) if 'delay_probability' in predictions.columns else 0.0
+            results.ml_risk_distribution = {str(k): int(v) for k, v in predictions['risk_level'].value_counts().items()} if 'risk_level' in predictions.columns else {}
+            results.success = True
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de la prédiction ML: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            results.errors.append(error_msg)
+            
+        finally:
+            if self.pg_manager:
+                self.pg_manager.disconnect()
+            
+        results.end_time = datetime.now().isoformat()
+        results.duration_seconds = (datetime.now() - operation_start_time).total_seconds()
+        
         return results

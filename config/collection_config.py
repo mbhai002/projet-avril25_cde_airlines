@@ -25,6 +25,12 @@ class CollectionConfig:
     enable_postgresql_insertion: bool = True
     postgresql_uri: str = "postgresql://postgres:cdps%40973@localhost:5433/dst"
     
+    # Machine Learning
+    ml_model_dir: str = "machine_learning/model_output"
+    ml_model_config_path: str = None  # None = utiliser le modèle le plus récent
+    ml_test_n_flights: int = 1000  # Nombre de vols pour test en production
+    enable_ml_prediction: bool = True  # Active la prédiction ML automatique après insertion PostgreSQL
+    
     # Collecte
     num_airports: int = 200
     delay: float = 1.5
@@ -67,11 +73,23 @@ class CollectionResults:
     taf_collected: int = 0
     taf_inserted: int = 0
     mongodb_connected: bool = False
+    
+    # Machine Learning
+    ml_predictions_generated: int = 0
+    ml_predictions_saved: int = 0
+    ml_avg_delay_probability: float = 0.0
+    ml_risk_distribution: dict = None  # Distribution des niveaux de risque
+    
     errors: List[str] = None
+    details: dict = None  # Détails supplémentaires (ex: inserted_flight_ids)
     
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
+        if self.details is None:
+            self.details = {}
+        if self.ml_risk_distribution is None:
+            self.ml_risk_distribution = {}
 
 
 def get_default_config() -> CollectionConfig:

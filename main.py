@@ -22,14 +22,14 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst2",
+        database_name="dst_ml",
 
         # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst_ml",
 
         # Collecte
-        num_airports=200,
+        num_airports=10,
         delay=1.5,
         batch_size=500,
         enable_weather=True,  
@@ -37,7 +37,7 @@ def create_my_config() -> CollectionConfig:
         past_hour_offset=-20,   # Décalage pour vols passés
         
         # Comportement - Modifiez selon vos besoins
-        run_once=False,              # True = une fois, False = en boucle
+        run_once=True,              # True = une fois, False = en boucle
         collect_realtime=True,      # Collecte vols temps réel
         collect_past=True,          # Collecte vols passés
         

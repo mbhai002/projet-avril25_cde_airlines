@@ -9,6 +9,8 @@ import numpy as np
 import warnings
 import joblib
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 from typing import Tuple, Dict, List, Optional, Union
 from pathlib import Path
@@ -77,7 +79,7 @@ class FlightDelayPredictor:
                  delay_threshold: int = 15,
                  sample_size: Optional[int] = None,
                  random_state: int = 42,
-                 output_dir: str = "machine learning/model_output"):
+                 output_dir: str = "machine_learning/model_output"):
         """
         Initialise le prédicteur de retards de vol.
         
@@ -192,13 +194,13 @@ class FlightDelayPredictor:
         
         print(f"\n🎯 Recommandé: 'xgboost_tuned' pour classes déséquilibrées")
         
-    def load_and_prepare_data(self, data_path: str, airports_ref_path: str, 
-                              for_training: bool = True) -> pd.DataFrame:
+    def load_and_prepare_dataframe(self, df: pd.DataFrame, airports_ref_path: str, 
+                                   for_training: bool = True) -> pd.DataFrame:
         """
-        Charge et prépare les données avec toutes les transformations nécessaires.
+        Prépare un DataFrame avec toutes les transformations nécessaires.
         
         Args:
-            data_path: Chemin vers le fichier de données principal
+            df: DataFrame avec les données de vols
             airports_ref_path: Chemin vers le fichier de référence des aéroports
             for_training: Si True, applique les filtres d'entraînement (nettoyage, filtrage temporel)
                          Si False, mode production sans filtres
@@ -206,9 +208,7 @@ class FlightDelayPredictor:
         Returns:
             DataFrame préparé avec toutes les caractéristiques
         """
-        
-        # Chargement des données
-        df = pd.read_csv(data_path)
+        # Chargement de la référence des aéroports
         airports_ref = pd.read_csv(airports_ref_path, sep=';')[['code_iata', 'timezone']]
         
         print(f"✅ Données chargées: {len(df):,} lignes")
@@ -234,6 +234,26 @@ class FlightDelayPredictor:
         
         print("✅ Préparation des données terminée")
         return df
+    
+    def load_and_prepare_data(self, data_path: str, airports_ref_path: str, 
+                              for_training: bool = True) -> pd.DataFrame:
+        """
+        Charge et prépare les données avec toutes les transformations nécessaires.
+        
+        Args:
+            data_path: Chemin vers le fichier de données principal
+            airports_ref_path: Chemin vers le fichier de référence des aéroports
+            for_training: Si True, applique les filtres d'entraînement (nettoyage, filtrage temporel)
+                         Si False, mode production sans filtres
+            
+        Returns:
+            DataFrame préparé avec toutes les caractéristiques
+        """
+        # Chargement du CSV
+        df = pd.read_csv(data_path)
+        
+        # Appliquer load_and_prepare_dataframe (DRY!)
+        return self.load_and_prepare_dataframe(df, airports_ref_path, for_training)
     
     def _remove_data_gaps(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1835,6 +1855,76 @@ class FlightDelayPredictor:
         """
         return self.plot_feature_importance(top_n)
 
+    def predict_from_dataframe(self,
+                              df: pd.DataFrame,
+                              airports_ref_path: str = "utils/airports_ref.csv",
+                              include_probability: bool = True) -> pd.DataFrame:
+        """
+        Prédit les retards avec classification de risque à partir d'un DataFrame
+        
+        Args:
+            df: DataFrame avec les données de vols (depuis vue PostgreSQL "all")
+            airports_ref_path: Chemin vers le fichier de référence des aéroports
+            include_probability: Inclure la probabilité numérique dans le résultat
+            
+        Returns:
+            DataFrame avec les prédictions et classifications de risque
+        """
+        if self.model is None or self.preprocessor is None:
+            raise ValueError("Le modèle doit être chargé avant de faire des prédictions")
+        
+        print(f"🔄 Préparation des données ({len(df):,} vols)...")
+        
+        # Sauvegarder f_id si présent
+        f_id_column = None
+        if 'f_id' in df.columns:
+            f_id_values = df['f_id'].copy()
+            f_id_column = 'f_id'
+        elif 'id' in df.columns:
+            f_id_values = df['id'].copy()
+            f_id_column = 'id'
+        else:
+            # Créer un ID temporaire basé sur l'index
+            f_id_values = pd.Series(range(len(df)), name='row_id')
+            f_id_column = 'row_id'
+        
+        # Préparation des données avec load_and_prepare_dataframe (mode production, DRY!)
+        print("🔄 Préparation des caractéristiques (mode production)...")
+        df_prepared = self.load_and_prepare_dataframe(df, airports_ref_path, for_training=False)
+        
+        # Sélection des colonnes pour la prédiction
+        feature_cols = self.numeric_features + self.categorical_features + self.ordered_features
+        existing_cols = [col for col in feature_cols if col in df_prepared.columns]
+        
+        if len(existing_cols) != len(feature_cols):
+            missing_cols = set(feature_cols) - set(existing_cols)
+            print(f"⚠️ Colonnes manquantes: {missing_cols}")
+            print("   Les colonnes manquantes seront imputées automatiquement.")
+        
+        X = df_prepared[existing_cols]
+        
+        # Prédictions
+        print("🔄 Génération des prédictions...")
+        probabilities, predictions = self.predict(X)
+        
+        # Classification des risques
+        risk_levels = self._classify_risk_levels(probabilities)
+        
+        # Construction du DataFrame de résultats
+        results = pd.DataFrame({
+            f_id_column: f_id_values[:len(probabilities)],
+            'prediction': predictions,
+            'risk_level': risk_levels
+        })
+        
+        if include_probability:
+            results['delay_probability'] = probabilities
+            
+        # Ajout de statistiques descriptives
+        self._print_prediction_summary(results, probabilities)
+            
+        return results
+    
     def predict_from_csv(self, 
                         csv_path: str, 
                         airports_ref_path: str = "airports_ref.csv",
@@ -1857,58 +1947,12 @@ class FlightDelayPredictor:
         
         print(f"🔄 Chargement des données depuis {csv_path}...")
         
-        # Charger les données brutes pour sauvegarder les IDs
+        # Charger le DataFrame
         df_raw = pd.read_csv(csv_path)
+        print(f"✅ {len(df_raw):,} lignes chargées")
         
-        # Sauvegarder f_id si présent
-        f_id_column = None
-        if 'f_id' in df_raw.columns:
-            f_id_values = df_raw['f_id'].copy()
-            f_id_column = 'f_id'
-        elif 'id' in df_raw.columns:
-            f_id_values = df_raw['id'].copy()
-            f_id_column = 'id'
-        else:
-            # Créer un ID temporaire basé sur l'index
-            f_id_values = pd.Series(range(len(df_raw)), name='row_id')
-            f_id_column = 'row_id'
-            
-        print(f"✅ {len(df_raw):,} lignes chargées, colonne d'identifiant: {f_id_column}")
-        
-        # Préparation des données avec load_and_prepare_data (mode production, DRY!)
-        print("🔄 Préparation des caractéristiques (mode production)...")
-        df = self.load_and_prepare_data(csv_path, airports_ref_path, for_training=False)
-        
-        # Sélection des colonnes pour la prédiction
-        feature_cols = self.numeric_features + self.categorical_features + self.ordered_features
-        existing_cols = [col for col in feature_cols if col in df.columns]
-        
-        if len(existing_cols) != len(feature_cols):
-            missing_cols = set(feature_cols) - set(existing_cols)
-            print(f"⚠️ Colonnes manquantes: {missing_cols}")
-            print("   Les colonnes manquantes seront imputées automatiquement.")
-        
-        X = df[existing_cols]
-        
-        # Prédictions
-        print("🔄 Génération des prédictions...")
-        probabilities, predictions = self.predict(X)
-        
-        # Classification des risques
-        risk_levels = self._classify_risk_levels(probabilities)
-        
-        # Construction du DataFrame de résultats
-        results = pd.DataFrame({
-            f_id_column: f_id_values[:len(probabilities)],
-            'prediction': predictions,
-            'risk_level': risk_levels
-        })
-        
-        if include_probability:
-            results['delay_probability'] = probabilities
-            
-        # Ajout de statistiques descriptives
-        self._print_prediction_summary(results, probabilities)
+        # Appliquer predict_from_dataframe (DRY!)
+        results = self.predict_from_dataframe(df_raw, airports_ref_path, include_probability)
         
         # Sauvegarde si demandée
         if output_path:
@@ -1980,9 +2024,11 @@ class FlightDelayPredictor:
         print(f"🟢 Pas de retard: {nb_pas_retards:,} ({nb_pas_retards/total*100:.1f}%)")
         print()
         print("📈 DISTRIBUTION DES RISQUES:")
-        for risk_level in ["Faible", "Modéré", "Élevé"]:
-            count = risk_counts.get(risk_level, 0)
-            print(f"  {risk_level:>8}: {count:>6,} vols ({count/total*100:>5.1f}%)")
+        # Mapping des niveaux de risque anglais vers français pour l'affichage
+        risk_mapping = {"low": "Faible", "medium": "Modéré", "high": "Élevé"}
+        for risk_level_en, risk_level_fr in risk_mapping.items():
+            count = risk_counts.get(risk_level_en, 0)
+            print(f"  {risk_level_fr:>8}: {count:>6,} vols ({count/total*100:>5.1f}%)")
         
         print(f"\n🎯 STATISTIQUES DES PROBABILITÉS:")
         print(f"  Probabilité moyenne: {np.mean(probabilities):.3f}")
@@ -2025,6 +2071,35 @@ class FlightDelayPredictor:
             'risk_level': risk_level,
             'delay_expected': prediction[0] == 1
         }
+    
+    def display_model_summary(self):
+        """
+        Affiche un résumé formaté des informations du modèle
+        """
+        print("\n" + "=" * 60)
+        print("📊 INFORMATIONS DU MODÈLE")
+        print("=" * 60)
+        print(f"Type de modèle: {type(self.model).__name__}")
+        print(f"Seuil de retard: {self.delay_threshold} minutes")
+        print(f"Seuil optimal: {self.optimal_threshold:.3f}")
+        print(f"Seuils de risque: Faible < {self.risk_threshold_low:.3f} < Modéré < {self.risk_threshold_high:.3f} < Élevé")
+        
+        if self.training_metrics:
+            metrics = self.training_metrics
+            print(f"\n📈 MÉTRIQUES D'ENTRAÎNEMENT:")
+            print(f"  ROC-AUC: {metrics.get('roc_auc', 'N/A'):.3f}")
+            print(f"  PR-AUC: {metrics.get('pr_auc', 'N/A'):.3f}")
+            print(f"  F1-Score: {metrics.get('f1_score', 'N/A'):.3f}")
+            print(f"  Précision: {metrics.get('precision', 'N/A'):.3f}")
+            print(f"  Rappel: {metrics.get('recall', 'N/A'):.3f}")
+            
+            if 'overfitting_analysis' in metrics:
+                overfitting = metrics['overfitting_analysis']
+                print(f"\n🔍 ANALYSE OVERFITTING:")
+                print(f"  Statut: {overfitting.get('overfitting_status', 'N/A')}")
+                print(f"  Écart moyen: {overfitting.get('average_gap_percent', 0):.1f}%")
+        
+        print("=" * 60)
 
 
 # Exemple d'utilisation
