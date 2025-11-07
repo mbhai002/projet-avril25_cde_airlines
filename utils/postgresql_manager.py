@@ -1074,44 +1074,6 @@ class PostgreSQLManager:
             self.logger.error(f"❌ Erreur lors de la récupération des vols par IDs: {e}")
             raise
     
-    def fetch_last_n_flights(self, n: int = 1000):
-        """
-        Récupère les N dernières lignes de la view "all" pour prédiction ML
-        
-        Args:
-            n: Nombre de lignes à récupérer (défaut: 1000)
-        
-        Returns:
-            DataFrame pandas avec les données des vols
-        
-        Raises:
-            Exception: Si pas de connexion ou erreur SQL
-        """
-        try:
-            import pandas as pd
-        except ImportError:
-            raise ImportError("pandas est requis pour cette méthode. Installez-le avec: pip install pandas")
-        
-        if not self.test_connection():
-            raise Exception("Pas de connexion PostgreSQL")
-        
-        self.logger.info(f"📊 Récupération des {n} derniers vols depuis la view 'all'...")
-        
-        query = f"""
-            SELECT * FROM public."all"
-            ORDER BY f_id DESC
-            LIMIT {n}
-        """
-        
-        try:
-            df = pd.read_sql_query(query, self.connection)
-            self.logger.info(f"✅ {len(df)} lignes récupérées")
-            return df
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur lors de la récupération des données: {e}")
-            raise
-    
     def update_flight_predictions(self, predictions) -> int:
         """
         Met à jour les probabilités de retard et niveaux de risque dans la table flight
@@ -1185,19 +1147,3 @@ class PostgreSQLManager:
                 cursor.close()
         
         return updated_count
-
-
-if __name__ == "__main__":
-    # Test de base
-    logger = get_logger(__name__)
-    
-    # Configuration de test
-    test_uri = "postgresql://user:password@host:port/database"
-    
-    manager = PostgreSQLManager(test_uri)
-    
-    if manager.connect():
-        logger.info("Test de connexion PostgreSQL réussi")
-        manager.disconnect()
-    else:
-        logger.error("Test de connexion PostgreSQL échoué")

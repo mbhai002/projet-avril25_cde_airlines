@@ -6,6 +6,7 @@ Configuration du logging pour le projet DST Airlines
 import logging
 import os
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 
 def setup_simple_logger(name: str = __name__, level: str = "INFO") -> logging.Logger:
@@ -44,9 +45,14 @@ def setup_simple_logger(name: str = __name__, level: str = "INFO") -> logging.Lo
     console_handler.setLevel(getattr(logging, level.upper()))
     logger.addHandler(console_handler)
     
-    # Handler fichier simple
+    # Handler fichier avec rotation (max 100 Mo, 5 fichiers de backup)
     log_filename = os.path.join(logs_dir, "application.log")
-    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler = RotatingFileHandler(
+        log_filename,
+        maxBytes=100 * 1024 * 1024,  # 100 Mo
+        backupCount=5,
+        encoding='utf-8'
+    )
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)  # Tout sauvegarder dans le fichier
     logger.addHandler(file_handler)
