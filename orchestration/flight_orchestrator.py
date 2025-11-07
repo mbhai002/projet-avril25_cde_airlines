@@ -1159,7 +1159,7 @@ class FlightOrchestrator:
     
     def update_flights_data_to_postgres(self, session_id: str) -> CollectionResults:
         """
-        ÉTAPE 7: Met à jour PostgreSQL avec les données réelles des vols passés
+        ÉTAPE 8: Met à jour PostgreSQL avec les données réelles des vols passés
         
         Args:
             session_id: Session ID global à traiter (même que realtime_session_id)
@@ -1174,7 +1174,7 @@ class FlightOrchestrator:
             start_time=operation_start_time.isoformat()
         )
         
-        self.logger.info("=== ÉTAPE 7: MISE À JOUR POSTGRESQL ===")
+        self.logger.info("=== ÉTAPE 8: MISE À JOUR POSTGRESQL ===")
         self.logger.info(f"Session ID: {session_id}")
         
         if not self.config.enable_postgresql_insertion or not self.pg_manager:
@@ -1235,7 +1235,7 @@ class FlightOrchestrator:
  
     def predict_flights_ml(self, flight_ids: List[int]) -> CollectionResults:
         """
-        ÉTAPE 6.5: Applique les predictions ML sur les vols nouvellement inseres
+        ÉTAPE 7: Applique les predictions ML sur les vols nouvellement inseres
         
         Args:
             flight_ids: Liste des IDs de vols inseres dans PostgreSQL
@@ -1250,7 +1250,7 @@ class FlightOrchestrator:
             start_time=operation_start_time.isoformat()
         )
         
-        self.logger.info("=== ÉTAPE 6.5: PRÉDICTION ML ===")
+        self.logger.info("=== ÉTAPE 7: PRÉDICTION ML ===")
         self.logger.info(f"{len(flight_ids)} vols a predire")
         
         if not flight_ids:

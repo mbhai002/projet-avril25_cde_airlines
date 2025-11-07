@@ -161,30 +161,30 @@ class ExecutionManager:
 
         time.sleep(self.STEP_PAUSE_SECONDS)
 
-        # 🆕 ÉTAPE 6.5: Prédiction ML sur les vols nouvellement insérés
+        # ÉTAPE 7: Prédiction ML sur les vols nouvellement insérés
         if self.config.enable_ml_prediction and results_postgres and results_postgres.success and results_postgres.details and 'inserted_flight_ids' in results_postgres.details:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6.5: Prédiction ML sur vols insérés...")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Prédiction ML sur vols insérés...")
             try:
                 inserted_ids = results_postgres.details['inserted_flight_ids']
                 results_ml = orchestrator.predict_flights_ml(inserted_ids)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 6.5 {'réussie' if results_ml.success else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 7 {'réussie' if results_ml.success else 'échouée'}")
             except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 6.5: {e}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 7: {e}")
         elif self.config.enable_ml_prediction:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 6.5: Ignorée (pas de vols insérés)")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Ignorée (pas de vols insérés)")
 
         time.sleep(self.STEP_PAUSE_SECONDS)
 
-        # ÉTAPE 7: Mise à jour des vols dans PostgreSQL avec les données passées
+        # ÉTAPE 8: Mise à jour des vols dans PostgreSQL avec les données passées
         if self.config.enable_postgresql_insertion and global_session_id and results_past and results_past.success:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Mise à jour vols PostgreSQL avec données passées...")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 8: Mise à jour vols PostgreSQL avec données passées...")
             try:
                 results_update = orchestrator.update_flights_data_to_postgres(global_session_id)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 7 {'réussie' if results_update.success else 'échouée'}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✓ Étape 8 {'réussie' if results_update.success else 'échouée'}")
             except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 7: {e}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]   ✗ Erreur étape 8: {e}")
         elif self.config.enable_postgresql_insertion:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 7: Ignorée (pas de session de vols ou pas de vols passés collectés)")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] → ÉTAPE 8: Ignorée (pas de session de vols ou pas de vols passés collectés)")
 
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()

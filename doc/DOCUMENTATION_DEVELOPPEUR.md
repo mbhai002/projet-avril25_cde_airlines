@@ -29,9 +29,9 @@ projet-avril25_cde_airlines/
 └── reset_environment.py   # Reset complet avec confirmation
 ```
 
-## 🔄 Workflow des 7 Étapes
+## 🔄 Workflow des 8 Étapes
 
-Le système exécute un workflow en 7 étapes avec un **Session ID global** pour lier toutes les données :
+Le système exécute un workflow en 8 étapes avec un **Session ID global** pour lier toutes les données :
 
 ### **ÉTAPE 1 : Collecte Vols Temps Réel** 🛫
 - **Source** : airportinfo.live
@@ -67,7 +67,12 @@ Le système exécute un workflow en 7 étapes avec un **Session ID global** pour
 - **Tables** : `flight`, `metar`, `taf`
 - **Données** : Insertion des données structurées pour l'analyse
 
-### **ÉTAPE 7 : Mise à jour PostgreSQL** 🔄
+### **ÉTAPE 7 : Prédiction ML** 🤖
+- **Source** : Vols nouvellement insérés dans PostgreSQL
+- **Action** : Application du modèle ML pour prédire les retards
+- **Objectif** : Enrichir les données avec les prédictions de retard
+
+### **ÉTAPE 8 : Mise à jour PostgreSQL** 🔄
 - **Source** : Données des vols passés (étape 3)
 - **Action** : Mise à jour avec heures réelles vs prévues
 - **Objectif** : Données complètes pour modélisation des retards
@@ -167,7 +172,7 @@ script_version="2.0"
   - `run()` : Décide entre exécution unique ou boucle
   - `_run_single()` : Une collecte complète
   - `_run_loop()` : Collectes programmées
-  - `_execute_complete_workflow()` : Orchestration des 7 étapes
+  - `_execute_complete_workflow()` : Orchestration des 8 étapes
 
 ### **FlightOrchestrator** 
 - **Rôle** : Orchestrateur principal, coordination des étapes
@@ -335,7 +340,7 @@ postgresql_uri="postgresql://user:password@host:port/database"
 
 Pour contribuer au projet :
 
-1. **Comprendre** le workflow des 7 étapes
+1. **Comprendre** le workflow des 8 étapes
 2. **Respecter** l'architecture modulaire existante
 3. **Tester** avec `quick_reset.py` entre les modifications
 4. **Logger** abondamment pour le debugging
