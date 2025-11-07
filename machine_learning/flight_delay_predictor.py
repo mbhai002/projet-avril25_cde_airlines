@@ -1,7 +1,5 @@
 """
-Flight Delay Predictor - Classe complète pour la prédiction des retards de vol
-Refactorisé à partir du notebook machine_learning4.ipynb
-Date: 27 septembre 2025
+Flight Delay Predictor - Classe pour l'entrainement et la prédiction des retards de vol
 """
 
 import pandas as pd
@@ -26,6 +24,7 @@ from sklearn.metrics import (
     precision_recall_curve, roc_curve, average_precision_score,
     f1_score, precision_score, recall_score
 )
+from sklearn.calibration import calibration_curve
 
 # Modèles de Machine Learning
 from sklearn.tree import DecisionTreeClassifier
@@ -73,13 +72,23 @@ class FlightDelayPredictor:
     - xgboost: XGBoost standard
     - xgboost_tuned: XGBoost optimisé (recommandé)
     - lightgbm: LightGBM (si installé)
+    
+    Méthodes principales:
+    - train(): Entraîne le modèle
+    - train_and_plot(): Entraîne et génère les graphiques automatiquement
+    - predict(): Prédit les retards pour de nouveaux vols
+    - plot_last_performance(): Affiche les métriques de performance
+    - plot_last_calibration_curve(): Affiche la courbe de calibration
+    - plot_feature_importance(): Affiche l'importance des features
+    - save_model(): Sauvegarde le modèle entraîné
+    - load_model(): Charge un modèle sauvegardé
     """
     
     def __init__(self, 
                  delay_threshold: int = 15,
                  sample_size: Optional[int] = None,
                  random_state: int = 42,
-                 output_dir: str = "machine_learning/model_output"):
+                 output_dir: Optional[str] = None):
         """
         Initialise le prédicteur de retards de vol.
         
@@ -87,12 +96,16 @@ class FlightDelayPredictor:
             delay_threshold: Seuil en minutes pour considérer un vol en retard
             sample_size: Taille d'échantillon pour l'entraînement (None = toutes les données)
             random_state: Graine aléatoire pour la reproductibilité
-            output_dir: Répertoire de sortie pour sauvegarder les modèles
+            output_dir: Répertoire de sortie pour sauvegarder les modèles (None = model_output relatif au fichier)
         """
         self.delay_threshold = delay_threshold
         self.sample_size = sample_size
         self.random_state = random_state
-        self.output_dir = Path(output_dir)
+        
+        if output_dir is None:
+            self.output_dir = Path(__file__).parent / "model_output"
+        else:
+            self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
         # Configuration des caractéristiques
@@ -153,62 +166,24 @@ class FlightDelayPredictor:
         self.class_weights = None
         self.feature_importance = None
         self.training_metrics = {}
-    
-    @staticmethod
-    def get_available_models() -> Dict[str, str]:
-        """
-        Retourne la liste des modèles disponibles avec leurs descriptions
-        
-        Returns:
-            Dictionnaire {nom_modele: description}
-        """
-        base_models = {
-            'decision_tree': 'Arbre de décision - Simple et interprétable',
-            'random_forest': 'Forêt aléatoire - Robuste, bon par défaut',
-            'logistic_regression': 'Régression logistique - Rapide et linéaire',
-            'svm': 'Machine à vecteurs de support - Puissant pour données complexes',
-            'knn': 'K plus proches voisins - Simple, basé sur la similarité',
-            'xgboost': 'XGBoost standard - Gradient boosting performant',
-            'xgboost_tuned': 'XGBoost optimisé - Recommandé pour classes déséquilibrées'
-        }
-        
-        if LIGHTGBM_AVAILABLE:
-            base_models['lightgbm'] = 'LightGBM - Alternative rapide à XGBoost'
-        
-        return base_models
-    
-    @staticmethod
-    def print_available_models():
-        """Affiche la liste des modèles disponibles"""
-        models = FlightDelayPredictor.get_available_models()
-        
-        print("🤖 MODÈLES DE ML DISPONIBLES:")
-        print("=" * 50)
-        
-        for model_name, description in models.items():
-            status = "✅" if model_name != 'lightgbm' or LIGHTGBM_AVAILABLE else "❌"
-            print(f"{status} {model_name:18} : {description}")
-        
-        if not LIGHTGBM_AVAILABLE:
-            print(f"\n💡 Pour activer LightGBM: pip install lightgbm")
-        
-        print(f"\n🎯 Recommandé: 'xgboost_tuned' pour classes déséquilibrées")
-        
-    def load_and_prepare_dataframe(self, df: pd.DataFrame, airports_ref_path: str, 
+            
+    def load_and_prepare_dataframe(self, df: pd.DataFrame, airports_ref_path: Optional[str] = None, 
                                    for_training: bool = True) -> pd.DataFrame:
         """
         Prépare un DataFrame avec toutes les transformations nécessaires.
         
         Args:
             df: DataFrame avec les données de vols
-            airports_ref_path: Chemin vers le fichier de référence des aéroports
+            airports_ref_path: Chemin vers le fichier de référence des aéroports (None = utils/airports_ref.csv)
             for_training: Si True, applique les filtres d'entraînement (nettoyage, filtrage temporel)
                          Si False, mode production sans filtres
             
         Returns:
             DataFrame préparé avec toutes les caractéristiques
         """
-        # Chargement de la référence des aéroports
+        if airports_ref_path is None:
+            airports_ref_path = Path(__file__).parent.parent / "utils" / "airports_ref.csv"
+        
         airports_ref = pd.read_csv(airports_ref_path, sep=';')[['code_iata', 'timezone']]
         
         print(f"✅ Données chargées: {len(df):,} lignes")
@@ -235,30 +210,30 @@ class FlightDelayPredictor:
         print("✅ Préparation des données terminée")
         return df
     
-    def load_and_prepare_data(self, data_path: str, airports_ref_path: str, 
+    def load_and_prepare_csv(self, data_path: str, airports_ref_path: Optional[str] = None, 
                               for_training: bool = True) -> pd.DataFrame:
         """
         Charge et prépare les données avec toutes les transformations nécessaires.
         
         Args:
             data_path: Chemin vers le fichier de données principal
-            airports_ref_path: Chemin vers le fichier de référence des aéroports
+            airports_ref_path: Chemin vers le fichier de référence des aéroports (None = utils/airports_ref.csv)
             for_training: Si True, applique les filtres d'entraînement (nettoyage, filtrage temporel)
                          Si False, mode production sans filtres
             
         Returns:
             DataFrame préparé avec toutes les caractéristiques
         """
-        # Chargement du CSV
         df = pd.read_csv(data_path)
         
-        # Appliquer load_and_prepare_dataframe (DRY!)
         return self.load_and_prepare_dataframe(df, airports_ref_path, for_training)
     
     def _remove_data_gaps(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Supprime les vols d'une heure complète si TOUS les vols de cette heure
-        ont un status_final manquant (NaN, vide, ou null).
+        ont un status_final manquant (NaN, vide, ou null). Ces vols témoignent d'une interruption
+        du processus de collecte des statuts finaux et ne doivent pas être pris en compte dans le
+        processus d'entrainement.
         
         Args:
             df: DataFrame avec les données de vol
@@ -796,6 +771,30 @@ class FlightDelayPredictor:
         
         return metrics
     
+    def train_and_plot(self, df: pd.DataFrame, model_type: str = 'xgboost_tuned', 
+                       show_plots: bool = True) -> Dict:
+        """
+        Entraîne le modèle et génère automatiquement les graphiques de performance.
+        Méthode tout-en-un pour utilisation simplifiée.
+        
+        Args:
+            df: DataFrame préparé avec toutes les caractéristiques
+            model_type: Type de modèle à utiliser
+            show_plots: Afficher les graphiques automatiquement
+            
+        Returns:
+            Dictionnaire avec les métriques d'entraînement
+        """
+        metrics = self.train(df, model_type=model_type)
+        
+        if show_plots:
+            print("\n📊 Génération des graphiques de performance...")
+            self.plot_last_performance()
+            self.plot_last_calibration_curve()
+            self.plot_feature_importance()
+        
+        return metrics
+    
     def get_detailed_feature_names(self) -> Dict[str, str]:
         """
         Retourne un mapping entre les noms de features génériques (cat_X) 
@@ -831,123 +830,6 @@ class FlightDelayPredictor:
         except Exception as e:
             print(f"❌ Erreur lors de la récupération des noms de features: {e}")
             return {}
-    
-    def explain_feature_importance(self, top_n: int = 20) -> pd.DataFrame:
-        """
-        Affiche l'importance des features avec leurs vrais noms de colonnes.
-        
-        Args:
-            top_n: Nombre de features les plus importantes à afficher
-            
-        Returns:
-            DataFrame avec l'importance des features et leurs vrais noms
-        """
-        if not hasattr(self, 'feature_importance') or self.feature_importance is None:
-            print("❌ Le modèle doit être entraîné avant de pouvoir expliquer l'importance des features")
-            return pd.DataFrame()
-        
-        # Obtenir le mapping des noms
-        feature_mapping = self.get_detailed_feature_names()
-        
-        # Créer une version enrichie du DataFrame d'importance
-        detailed_importance = self.feature_importance.copy()
-        detailed_importance['real_feature_name'] = detailed_importance['feature'].map(
-            lambda x: feature_mapping.get(x, x)
-        )
-        
-        # Afficher le top N
-        top_features = detailed_importance.head(top_n)
-        
-        print(f"\n🎯 Top {top_n} des features les plus importantes:")
-        print("=" * 80)
-        for idx, row in top_features.iterrows():
-            print(f"{row['feature']:15} -> {row['real_feature_name']:40} | Importance: {row['importance']:.4f}")
-        
-        return detailed_importance
-    
-    def show_readable_feature_importance(self, top_n: int = 20) -> None:
-        """
-        Affiche l'importance des features avec des descriptions en français compréhensibles.
-        
-        Args:
-            top_n: Nombre de features les plus importantes à afficher
-        """
-        if not hasattr(self, 'feature_importance') or self.feature_importance is None:
-            print("❌ Le modèle doit être entraîné avant de pouvoir afficher l'importance des features")
-            return
-        
-        # Dictionnaire de traduction pour rendre les noms plus compréhensibles
-        descriptions = {
-            # Features numériques - météo
-            'wind_speed_kt': '🌪️ Vitesse du vent au départ (nœuds)',
-            'wind_gust_kt': '💨 Rafales de vent au départ (nœuds)',
-            't_wind_speed_kt': '🌪️ Vitesse du vent à l\'arrivée (nœuds)',
-            't_wind_gust_kt': '💨 Rafales de vent à l\'arrivée (nœuds)',
-            'temperature_c': '🌡️ Température au départ (°C)',
-            't_temperature_c': '🌡️ Température à l\'arrivée (°C)',
-            'humidity_percent': '💧 Humidité au départ (%)',
-            'pressure_altimeter_hg': '📊 Pression atmosphérique départ',
-            'visibility_statute_mi': '👁️ Visibilité au départ',
-            't_visibility_statute_mi': '👁️ Visibilité à l\'arrivée',
-            
-            # Features calculées
-            'heat_index': '🔥 Indice de chaleur',
-            'wind_chill': '❄️ Refroidissement éolien',
-            'temp_diff': '🌡️ Différence de température départ-arrivée',
-            'pressure_diff': '📊 Différence de pression départ-arrivée',
-            'wind_speed_diff': '🌪️ Différence vitesse vent départ-arrivée',
-            
-            # Compagnies aériennes
-            'airline_code=AA': '✈️ American Airlines',
-            'airline_code=DL': '✈️ Delta Airlines', 
-            'airline_code=UA': '✈️ United Airlines',
-            'airline_code=WN': '✈️ Southwest Airlines',
-            'airline_code=B6': '✈️ JetBlue Airways',
-            'airline_code=AS': '✈️ Alaska Airlines',
-            
-            # Météo simplifiée
-            'dep_weather_simplified=Rain': '🌧️ Pluie au départ',
-            'dep_weather_simplified=Snow': '❄️ Neige au départ',
-            'dep_weather_simplified=Fog': '🌫️ Brouillard au départ',
-            'dep_weather_simplified=Clear': '☀️ Temps clair au départ',
-            'arr_weather_simplified=Rain': '🌧️ Pluie à l\'arrivée',
-            'arr_weather_simplified=Snow': '❄️ Neige à l\'arrivée',
-            'arr_weather_simplified=Fog': '🌫️ Brouillard à l\'arrivée',
-            'arr_weather_simplified=Clear': '☀️ Temps clair à l\'arrivée',
-            
-            # Impact météo
-            'dep_weather_impact=High': '⚠️ Impact météo élevé au départ',
-            'dep_weather_impact=Medium': '⚡ Impact météo moyen au départ',
-            'dep_weather_impact=Low': '✅ Impact météo faible au départ',
-            'arr_weather_impact=High': '⚠️ Impact météo élevé à l\'arrivée',
-            'arr_weather_impact=Medium': '⚡ Impact météo moyen à l\'arrivée',
-            'arr_weather_impact=Low': '✅ Impact météo faible à l\'arrivée',
-            'overall_weather_impact=High': '🚨 Impact météo global élevé',
-            'overall_weather_impact=Medium': '⚡ Impact météo global moyen',
-            'overall_weather_impact=Low': '✅ Impact météo global faible',
-        }
-        
-        print(f"\n🎯 TOP {top_n} - IMPORTANCE DES FACTEURS DE RETARD")
-        print("=" * 80)
-        
-        for i, (_, row) in enumerate(self.feature_importance.head(top_n).iterrows(), 1):
-            feature_name = row['feature']
-            importance = row['importance']
-            
-            # Obtenir la description
-            description = descriptions.get(feature_name, feature_name)
-            
-            # Calculer le pourcentage d'importance
-            total_importance = self.feature_importance['importance'].sum()
-            percentage = (importance / total_importance * 100) if total_importance > 0 else 0
-            
-            # Affichage formaté
-            bar_length = int(importance * 50 / self.feature_importance['importance'].max())
-            bar = "█" * bar_length + "▒" * (50 - bar_length)
-            
-            print(f"{i:2d}. {description}")
-            print(f"    {bar} {importance:.4f} ({percentage:.1f}%)")
-            print()
     
     def _create_model(self, model_type: str, y_train: pd.Series):
         """
@@ -1471,82 +1353,6 @@ class FlightDelayPredictor:
         plt.tight_layout()
         return fig
 
-    def comprehensive_overfitting_report(self, X: np.ndarray, y: pd.Series, 
-                                       save_plots: bool = True) -> Dict:
-        """
-        Génère un rapport complet d'analyse d'overfitting avec graphiques
-        
-        Args:
-            X: Données préprocessées
-            y: Labels
-            save_plots: Si True, sauvegarde les graphiques
-            
-        Returns:
-            Dictionnaire avec toutes les métriques d'overfitting
-        """
-        print(f"\n🔬 RAPPORT COMPLET D'ANALYSE D'OVERFITTING")
-        print("=" * 80)
-        
-        # Division train/test pour l'analyse
-        X_train_analysis, X_test_analysis, y_train_analysis, y_test_analysis = train_test_split(
-            X, y, test_size=0.3, random_state=self.random_state, stratify=y
-        )
-        
-        # Analyse d'overfitting détaillée
-        overfitting_metrics = self.detect_overfitting(
-            X_train_analysis, y_train_analysis, 
-            X_test_analysis, y_test_analysis
-        )
-        
-        # Génération des courbes d'apprentissage
-        if len(X) > 1000:  # Seulement si suffisamment de données
-            learning_curves_fig = self.plot_learning_curves(X, y)
-            
-            if save_plots:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                curves_path = self.output_dir / f"learning_curves_{timestamp}.png"
-                learning_curves_fig.savefig(curves_path, dpi=300, bbox_inches='tight')
-                print(f"📊 Courbes d'apprentissage sauvegardées: {curves_path}")
-                overfitting_metrics['learning_curves_path'] = str(curves_path)
-        
-        # Rapport textuel détaillé
-        report_path = self.output_dir / f"overfitting_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        self._save_overfitting_report(overfitting_metrics, report_path)
-        
-        return overfitting_metrics
-    
-    def _save_overfitting_report(self, metrics: Dict, report_path: Path):
-        """Sauvegarde un rapport textuel détaillé de l'analyse d'overfitting"""
-        
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write("RAPPORT D'ANALYSE D'OVERFITTING\n")
-            f.write("=" * 50 + "\n\n")
-            f.write(f"Date: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
-            f.write(f"Modèle: {type(self.model).__name__}\n")
-            f.write(f"Seuil de retard: {self.delay_threshold} minutes\n\n")
-            
-            f.write("MÉTRIQUES TRAIN vs TEST:\n")
-            f.write("-" * 30 + "\n")
-            for metric in ['roc_auc', 'f1_score', 'precision', 'recall']:
-                train_val = metrics.get(f'train_{metric}', 0)
-                test_val = metrics.get(f'test_{metric}', 0)
-                gap = metrics.get(f'{metric}_gap', 0)
-                gap_percent = metrics.get(f'{metric}_gap_percent', 0)
-                f.write(f"{metric.upper():>12}: Train={train_val:.3f} | Test={test_val:.3f} | Écart={gap:+.3f} ({gap_percent:+.1f}%)\n")
-            
-            f.write(f"\nÉCART MOYEN: {metrics.get('average_gap_percent', 0):.1f}%\n")
-            f.write(f"STATUT: {metrics.get('overfitting_status', 'Inconnu')}\n\n")
-            
-            f.write("VALIDATION CROISÉE:\n")
-            f.write("-" * 20 + "\n")
-            for metric in ['roc_auc', 'f1', 'precision', 'recall']:
-                mean_val = metrics.get(f'cv_{metric}_mean', 0)
-                std_val = metrics.get(f'cv_{metric}_std', 0)
-                stability = metrics.get(f'cv_{metric}_stability', 0)
-                f.write(f"{metric.upper():>12}: {mean_val:.3f} ±{std_val:.3f} | Stabilité: {stability:.1f}%\n")
-        
-        print(f"📄 Rapport détaillé sauvegardé: {report_path}")
-
     def predict(self, X: Union[pd.DataFrame, np.ndarray], 
                 threshold: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -1733,6 +1539,85 @@ class FlightDelayPredictor:
             
         return self.plot_performance_metrics(self.last_y_true, self.last_y_pred_proba)
 
+    def plot_calibration_curve(self, y_true: pd.Series, y_pred_proba: np.ndarray, 
+                                n_bins: int = 10, figsize: tuple = (15, 5)):
+        """
+        Génère une courbe de calibration pour évaluer la qualité des probabilités prédites.
+        
+        Args:
+            y_true: Valeurs réelles
+            y_pred_proba: Probabilités prédites
+            n_bins: Nombre de bins pour la calibration (défaut: 10)
+            figsize: Taille de la figure
+            
+        Returns:
+            Figure matplotlib
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        
+        # Calcul de la courbe de calibration
+        fraction_of_positives, mean_predicted_value = calibration_curve(
+            y_true, y_pred_proba, n_bins=n_bins, strategy='uniform'
+        )
+        
+        # 1. Courbe de calibration
+        ax1.plot([0, 1], [0, 1], 'k--', label='Parfaitement calibré', linewidth=2)
+        ax1.plot(mean_predicted_value, fraction_of_positives, 'o-', 
+                label=f'Modèle ({self.model.__class__.__name__})', 
+                linewidth=2, markersize=8, color='steelblue')
+        ax1.set_xlabel('Probabilité prédite moyenne', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Fraction de positifs', fontsize=12, fontweight='bold')
+        ax1.set_title('Courbe de Calibration', fontsize=14, fontweight='bold', pad=15)
+        ax1.legend(loc='upper left')
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xlim([0, 1])
+        ax1.set_ylim([0, 1])
+        
+        # Ajout de la zone de confiance
+        ax1.fill_between([0, 1], [0, 1], [0, 1], alpha=0.1, color='green')
+        
+        # 2. Distribution des probabilités par bin
+        ax2.hist(y_pred_proba, bins=n_bins, alpha=0.7, color='steelblue', 
+                edgecolor='navy', linewidth=1.2, label='Distribution des prédictions')
+        ax2.set_xlabel('Probabilité prédite', fontsize=12, fontweight='bold')
+        ax2.set_ylabel('Nombre de prédictions', fontsize=12, fontweight='bold')
+        ax2.set_title('Distribution des Probabilités', fontsize=14, fontweight='bold', pad=15)
+        ax2.grid(True, alpha=0.3, axis='y')
+        ax2.legend()
+        
+        plt.tight_layout()
+        
+        # Calcul de la métrique de calibration (Brier score)
+        brier_score = np.mean((y_pred_proba - y_true) ** 2)
+        
+        print("\n" + "=" * 60)
+        print("📊 ANALYSE DE CALIBRATION")
+        print("=" * 60)
+        print(f"Brier Score: {brier_score:.4f} (plus proche de 0 = meilleur)")
+        print(f"Nombre de bins: {n_bins}")
+        print("=" * 60)
+        
+        return fig
+    
+    def plot_last_calibration_curve(self, n_bins: int = 10, figsize: tuple = (15, 5)):
+        """
+        Génère la courbe de calibration avec les dernières prédictions.
+        Version simplifiée pour utilisation après l'entraînement.
+        
+        Args:
+            n_bins: Nombre de bins pour la calibration (défaut: 10)
+            figsize: Taille de la figure
+            
+        Returns:
+            Figure matplotlib ou None si pas de prédictions disponibles
+        """
+        if not hasattr(self, 'last_y_true') or not hasattr(self, 'last_y_pred_proba'):
+            print("❌ Aucune prédiction disponible. Entraînez d'abord le modèle.")
+            return None
+            
+        return self.plot_calibration_curve(self.last_y_true, self.last_y_pred_proba, 
+                                          n_bins=n_bins, figsize=figsize)
+
     def plot_feature_importance(self, top_n: int = 15, figsize: tuple = (12, 8)):
         """
         Affiche l'analyse de l'importance des features avec graphique et tableau
@@ -1822,38 +1707,6 @@ class FlightDelayPredictor:
         icon = status_icons.get(status, '❓')
         
         return f"{icon} Overfitting: {status} (Écart moyen: {avg_gap:.1f}%)"
-    
-    def display_overfitting_summary(self):
-        """
-        Affiche un résumé compact de l'analyse d'overfitting
-        """
-        if not hasattr(self, 'training_metrics') or 'overfitting_analysis' not in self.training_metrics:
-            print("❌ Analyse d'overfitting non disponible. Entraînez d'abord le modèle.")
-            return
-        
-        analysis = self.training_metrics['overfitting_analysis']
-        
-        print(f"\n🔍 RÉSUMÉ OVERFITTING")
-        print("=" * 40)
-        print(f"Statut: {self.quick_overfitting_check()}")
-        print(f"Écart ROC-AUC: {analysis.get('roc_auc_gap_percent', 0):+.1f}%")
-        print(f"Écart F1-Score: {analysis.get('f1_score_gap_percent', 0):+.1f}%")
-        print(f"Stabilité CV (ROC): {analysis.get('cv_roc_auc_stability', 0):.1f}%")
-        
-        # Conseil rapide
-        avg_gap = analysis.get('average_gap_percent', 0)
-        if avg_gap < 5:
-            print("💡 Conseil: Modèle bien équilibré, vous pouvez l'utiliser en production")
-        elif avg_gap < 15:
-            print("💡 Conseil: Surveillez les performances sur de nouvelles données")
-        else:
-            print("💡 Conseil: Réduisez la complexité ou augmentez les données")
-
-    def display_feature_importance(self, top_n: int = 15):
-        """
-        Alias pour plot_feature_importance (compatibilité)
-        """
-        return self.plot_feature_importance(top_n)
 
     def predict_from_dataframe(self,
                               df: pd.DataFrame,
@@ -2035,42 +1888,6 @@ class FlightDelayPredictor:
         print(f"  Probabilité médiane: {np.median(probabilities):.3f}")
         print(f"  Probabilité min/max: {np.min(probabilities):.3f} / {np.max(probabilities):.3f}")
         print(f"  Seuil de décision: {self.optimal_threshold:.3f}")
-
-    def predict_single_flight(self, flight_data: Dict) -> Dict[str, Union[str, float, int]]:
-        """
-        Prédit le retard pour un seul vol
-        
-        Args:
-            flight_data: Dictionnaire avec les données du vol
-            
-        Returns:
-            Dictionnaire avec la prédiction et le niveau de risque
-        """
-        if self.model is None or self.preprocessor is None:
-            raise ValueError("Le modèle doit être chargé avant de faire des prédictions")
-        
-        # Convertir en DataFrame
-        df = pd.DataFrame([flight_data])
-        
-        # Appliquer le même pipeline de préparation
-        # Note: Cette version simplifiée assume que les données sont déjà formatées
-        feature_cols = self.numeric_features + self.categorical_features + self.ordered_features
-        existing_cols = [col for col in feature_cols if col in df.columns]
-        
-        X = df[existing_cols]
-        
-        # Faire la prédiction
-        probability, prediction = self.predict(X)
-        
-        # Classer le niveau de risque
-        risk_level = self._classify_risk_levels(probability)[0]
-        
-        return {
-            'prediction': int(prediction[0]),
-            'delay_probability': float(probability[0]),
-            'risk_level': risk_level,
-            'delay_expected': prediction[0] == 1
-        }
     
     def display_model_summary(self):
         """
@@ -2107,15 +1924,20 @@ if __name__ == "__main__":
     # Exemple d'utilisation de la classe
     predictor = FlightDelayPredictor(
         delay_threshold=15,
-        sample_size=200000,  # Pour test rapide
+        sample_size=200000,
         random_state=42
     )
     
     # Chargement et préparation des données
-    df = predictor.load_and_prepare_data("C:/Temp/data-all 2025-11-04.csv", "utils/airports_ref.csv")
+    df = predictor.load_and_prepare_csv("C:/Temp/data-all 2025-11-04.csv")
     
-    # Entraînement
-    metrics = predictor.train(df, model_type='xgboost_tuned')
+    # Entraînement avec génération automatique des graphiques
+    metrics = predictor.train_and_plot(df, model_type='xgboost_tuned', show_plots=True)
+    
+    # Les méthodes suivantes sont également disponibles individuellement:
+    # predictor.plot_last_performance()
+    # predictor.plot_last_calibration_curve()
+    # predictor.plot_feature_importance()
     
     # Sauvegarde
     paths = predictor.save_model()

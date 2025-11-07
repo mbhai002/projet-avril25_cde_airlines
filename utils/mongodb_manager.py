@@ -33,8 +33,6 @@ class MongoDBManager:
         self.client: Optional[MongoClient] = None
         self.database: Optional[Database] = None
         self.logger = get_logger(__name__)
-        
-
     
     def connect(self) -> bool:
         """
