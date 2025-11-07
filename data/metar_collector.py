@@ -262,25 +262,28 @@ class MetarCollector:
         # 2. Parser le XML en JSON
         documents = self.parse_to_json(xml_filepath)
         
-        # 3. Nettoyer le fichier temporaire (optionnel)
+        # 3. Nettoyer le fichier temporaire
         try:
             os.remove(xml_filepath)
             self.logger.info(f"Fichier temporaire supprimé: {os.path.basename(xml_filepath)}")
         except Exception as e:
             self.logger.warning(f"Impossible de supprimer le fichier temporaire: {e}")
         
+        # 4. Nettoyer les anciens fichiers
+        self.cleanup_old_files()
+        
         return documents
     
     def cleanup_old_files(self, keep_count: int = 5) -> None:
         """
-        Nettoie les anciens fichiers XML pour économiser l'espace disque.
+        Nettoie les anciens fichiers XML et GZ pour économiser l'espace disque.
         
         Args:
             keep_count: Nombre de fichiers à conserver (par défaut 5)
         """
         try:
-            xml_files = [f for f in os.listdir(self.data_dir) if f.endswith('.xml')]
-            xml_files.sort()
+            # Nettoyer les fichiers XML
+            xml_files = sorted([f for f in os.listdir(self.data_dir) if f.endswith('.xml')])
             
             if len(xml_files) > keep_count:
                 files_to_delete = xml_files[:-keep_count]
@@ -288,6 +291,13 @@ class MetarCollector:
                     file_path = os.path.join(self.data_dir, file_to_delete)
                     os.remove(file_path)
                     self.logger.info(f"Ancien fichier METAR supprimé: {file_to_delete}")
+            
+            # Nettoyer aussi les éventuels fichiers .gz résiduels
+            gz_files = [f for f in os.listdir(self.data_dir) if f.endswith('.xml.gz')]
+            for gz_file in gz_files:
+                file_path = os.path.join(self.data_dir, gz_file)
+                os.remove(file_path)
+                self.logger.info(f"Fichier .gz résiduel supprimé: {gz_file}")
                     
         except Exception as e:
             self.logger.warning(f"Erreur lors du nettoyage: {e}")
