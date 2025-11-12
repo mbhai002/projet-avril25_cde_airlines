@@ -29,7 +29,7 @@ def create_my_config() -> CollectionConfig:
         postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",
 
         # Collecte
-        num_airports=5,
+        num_airports=200,
         delay=1.5,
         batch_size=500,
         enable_weather=True,  
@@ -50,8 +50,8 @@ def create_my_config() -> CollectionConfig:
         log_to_console=True,
         log_to_file=True,
 
-        enable_ftp_upload = False,
-        use_cache_server = True
+        enable_ftp_upload = True,
+        use_cache_server = False
     )
 
 

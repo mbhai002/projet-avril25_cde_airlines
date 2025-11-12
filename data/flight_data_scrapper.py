@@ -35,6 +35,7 @@ class FlightDataScraper:
         """
         self.logger = get_logger(__name__)
         self.use_cache_server = use_cache_server
+        self.ftp_cleaned_this_session = False  # Flag pour éviter de nettoyer plusieurs fois
         
         if use_cache_server:
             self.base_url = cache_server_url
@@ -178,9 +179,41 @@ class FlightDataScraper:
             self.logger.error(f"Impossible de sauvegarder dans {filename} : {e}")
             return False
 
+    def _cleanup_ftp_once(self, ftp_config: Dict) -> None:
+        """Nettoie le FTP une seule fois par session"""
+        if self.ftp_cleaned_this_session:
+            return
+        
+        max_age_hours = ftp_config.get('cleanup_max_age_hours', 24)
+        if max_age_hours <= 0:
+            return
+        
+        try:
+            self.logger.info("🗑️  Nettoyage FTP des vieux fichiers (une fois par session)...")
+            
+            with FTPManager(
+                host=ftp_config.get('host'),
+                port=ftp_config.get('port', 21),
+                username=ftp_config.get('username', ''),
+                password=ftp_config.get('password', ''),
+                use_tls=ftp_config.get('use_tls', False),
+                remote_directory=ftp_config.get('remote_directory', '/')
+            ) as ftp:
+                if ftp.ftp:
+                    deleted = ftp.cleanup_old_files(pattern="raw_*.html", max_age_hours=max_age_hours)
+                    if deleted > 0:
+                        self.logger.info(f"✓ Nettoyage FTP terminé: {deleted} fichier(s) supprimé(s)")
+                    else:
+                        self.logger.info("✓ Nettoyage FTP terminé: aucun fichier à supprimer")
+                    
+                    self.ftp_cleaned_this_session = True
+                    
+        except Exception as e:
+            self.logger.error(f"Erreur lors du nettoyage FTP: {e}")
+
     def _upload_raw_response_to_ftp(self, response, iata_airport: str, date: str, 
                                     shift: str, dep_arr: str, ftp_config: Dict) -> None:
-        """Upload la réponse HTTP brute vers un serveur FTP et nettoie les vieux fichiers"""
+        """Upload la réponse HTTP brute vers un serveur FTP"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"raw_{iata_airport}_{dep_arr}_{date}_{shift}h_{timestamp}.html"
@@ -203,13 +236,6 @@ class FlightDataScraper:
                     # Upload du nouveau fichier
                     ftp.ftp.storbinary(f'STOR {filename}', file_obj)
                     self.logger.info(f"✓ Upload FTP réussi: {filename} ({len(content_bytes)} octets)")
-                    
-                    # Nettoyage des vieux fichiers (max 24h)
-                    max_age_hours = ftp_config.get('cleanup_max_age_hours', 24)
-                    if max_age_hours > 0:
-                        deleted = ftp.cleanup_old_files(pattern="raw_*.html", max_age_hours=max_age_hours)
-                        if deleted > 0:
-                            self.logger.info(f"🗑️  Nettoyage FTP: {deleted} fichier(s) supprimé(s)")
                 else:
                     self.logger.error("✗ Impossible de se connecter au serveur FTP")
                     
@@ -245,6 +271,10 @@ class FlightDataScraper:
         """
         offset_desc = self._get_offset_description(hour_offset)
         self.logger.info(f"Récupération des départs pour {offset_desc} pour les {num_airports} premiers aéroports")
+        
+        # Nettoyage FTP une seule fois au début de la session (si configuré)
+        if ftp_config:
+            self._cleanup_ftp_once(ftp_config)
         
         # Charger les données des aéroports
         airports_df = self._load_airports_data()
