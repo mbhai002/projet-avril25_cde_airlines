@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 import pandas as pd
 import pytz
 from utils.flight_html_parser import ParserHtml
+from utils.ftp_manager import FTPManager
 from config.simple_logger import get_logger
 
 # Désactiver les warnings SSL pour ce scraper spécifique
@@ -23,16 +24,25 @@ class FlightDataScraper:
     Scraper pour récupérer les données de vols depuis airportinfo.live
     """
 
-    def __init__(self, lang: str = "en"):
+    def __init__(self, lang: str = "en", use_cache_server: bool = False, cache_server_url: str = None):
         """
         Initialise le scraper avec la langue spécifiée
         
         Args:
             lang: Langue pour les requêtes (défaut: "en")
+            use_cache_server: Si True, utilise le serveur cache au lieu d'airportinfo.live
+            cache_server_url: URL du serveur cache (optionnel)
         """
         self.logger = get_logger(__name__)
-        self.logger.info(f"Initialisation du scraper (langue: {lang})")
-        self.base_url = "https://data.airportinfo.live/airportic.php"
+        self.use_cache_server = use_cache_server
+        
+        if use_cache_server:
+            self.base_url = cache_server_url
+            self.logger.info(f"Initialisation du scraper avec serveur cache: {self.base_url}")
+        else:
+            self.base_url = "https://data.airportinfo.live/airportic.php"
+            self.logger.info(f"Initialisation du scraper (langue: {lang})")
+        
         self.lang = lang
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -60,7 +70,7 @@ class FlightDataScraper:
         return True
 
     def fetch(self, iata_airport: str, date: str, dep_arr: str = "arrival", 
-              shift: str = "00", max_retries: int = 3) -> List[Dict]:
+              shift: str = "00", max_retries: int = 3, ftp_config: Optional[Dict] = None) -> List[Dict]:
         """
         Récupère les données de vol pour un aéroport, une date et une heure donnés
         
@@ -70,6 +80,7 @@ class FlightDataScraper:
             dep_arr: Type de vol ("arrival" ou "departure")
             shift: Heure au format HH (00-23)
             max_retries: Nombre maximum de tentatives
+            ftp_config: Configuration FTP pour envoyer la réponse brute
             
         Returns:
             Liste des vols trouvés, liste vide en cas d'erreur
@@ -97,6 +108,10 @@ class FlightDataScraper:
                 
                 response.raise_for_status()
                 self.logger.info(f"✓ Succès requête {iata_airport} shift {shift} ({dep_arr})")
+                
+                # Upload de la réponse brute vers FTP si configuré
+                if ftp_config:
+                    self._upload_raw_response_to_ftp(response, iata_airport, date, shift, dep_arr, ftp_config)
                 
                 flights = self.parser.parse_flights_html(
                     response.text, 
@@ -163,10 +178,49 @@ class FlightDataScraper:
             self.logger.error(f"Impossible de sauvegarder dans {filename} : {e}")
             return False
 
+    def _upload_raw_response_to_ftp(self, response, iata_airport: str, date: str, 
+                                    shift: str, dep_arr: str, ftp_config: Dict) -> None:
+        """Upload la réponse HTTP brute vers un serveur FTP et nettoie les vieux fichiers"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"raw_{iata_airport}_{dep_arr}_{date}_{shift}h_{timestamp}.html"
+            
+            self.logger.info(f"Upload FTP de la réponse brute: {filename}")
+            
+            with FTPManager(
+                host=ftp_config.get('host'),
+                port=ftp_config.get('port', 21),
+                username=ftp_config.get('username', ''),
+                password=ftp_config.get('password', ''),
+                use_tls=ftp_config.get('use_tls', False),
+                remote_directory=ftp_config.get('remote_directory', '/')
+            ) as ftp:
+                if ftp.ftp:
+                    from io import BytesIO
+                    content_bytes = response.content
+                    file_obj = BytesIO(content_bytes)
+                    
+                    # Upload du nouveau fichier
+                    ftp.ftp.storbinary(f'STOR {filename}', file_obj)
+                    self.logger.info(f"✓ Upload FTP réussi: {filename} ({len(content_bytes)} octets)")
+                    
+                    # Nettoyage des vieux fichiers (max 24h)
+                    max_age_hours = ftp_config.get('cleanup_max_age_hours', 24)
+                    if max_age_hours > 0:
+                        deleted = ftp.cleanup_old_files(pattern="raw_*.html", max_age_hours=max_age_hours)
+                        if deleted > 0:
+                            self.logger.info(f"🗑️  Nettoyage FTP: {deleted} fichier(s) supprimé(s)")
+                else:
+                    self.logger.error("✗ Impossible de se connecter au serveur FTP")
+                    
+        except Exception as e:
+            self.logger.error(f"Erreur lors de l'upload FTP de la réponse brute: {e}")
+
+
     def fetch_next_hour_departures_top_airports(self, num_airports: int = 200, 
                                                delay: float = 2.0, 
                                                hour_offset: int = 1,
-                                               auto_save: bool = True) -> List[Dict]:
+                                               ftp_config: Optional[Dict] = None) -> List[Dict]:
         """
         Récupère les départs pour une heure spécifique pour les N premiers aéroports
         en tenant compte du timezone de chaque aéroport
@@ -176,7 +230,15 @@ class FlightDataScraper:
             delay: Délai entre les requêtes pour éviter le rate limiting
             hour_offset: Décalage en heures par rapport à l'heure actuelle
                         Exemples: 1 = prochaine heure, 0 = heure actuelle, -1 = heure précédente
-            auto_save: Si True, sauvegarde automatiquement en JSON (défaut: True)
+            ftp_config: Configuration FTP pour l'upload automatique des réponses brutes
+                       Format: {
+                           'host': 'ftp.example.com',
+                           'port': 21,
+                           'username': 'user',
+                           'password': 'pass',
+                           'use_tls': False,
+                           'remote_directory': '/uploads'
+                       }
         
         Returns:
             Liste de tous les vols de départ pour l'heure ciblée
@@ -205,7 +267,7 @@ class FlightDataScraper:
             
             try:
                 flights = self._fetch_airport_flights(
-                    iata_code, timezone_name, utc_now, hour_offset, index, num_airports
+                    iata_code, timezone_name, utc_now, hour_offset, index, num_airports, ftp_config
                 )
                 
                 if flights:
@@ -217,19 +279,11 @@ class FlightDataScraper:
             except Exception as e:
                 self.logger.error(f"✗ {iata_code}: {e}")
             
-            # Délai entre les requêtes (sauf pour le dernier)
-            if index < len(top_airports) - 1:
+            # Délai entre les requêtes (seulement si on utilise airportinfo.live)
+            if index < len(top_airports) - 1 and not self.use_cache_server:
                 time.sleep(delay)
         
         self.logger.info(f"Total de {len(all_flights)} vols de départ récupérés pour l'heure cible")
-        
-        # Sauvegarde automatique (optionnelle)
-        if auto_save and all_flights:
-            self._save_flight_data(all_flights, num_airports, hour_offset)
-        elif auto_save:
-            self.logger.info(f"Aucun vol trouvé, pas de sauvegarde effectuée")
-        else:
-            self.logger.info(f"Sauvegarde automatique désactivée")
         
         return all_flights
 
@@ -265,7 +319,7 @@ class FlightDataScraper:
 
     def _fetch_airport_flights(self, iata_code: str, timezone_name: str, 
                              utc_now: datetime, hour_offset: int, 
-                             index: int, total: int) -> List[Dict]:
+                             index: int, total: int, ftp_config: Optional[Dict] = None) -> List[Dict]:
         """Récupère les vols pour un aéroport spécifique"""
         try:
             # Obtenir le timezone de l'aéroport
@@ -293,7 +347,8 @@ class FlightDataScraper:
                 iata_airport=iata_code,
                 date=date_str,
                 dep_arr="departure",
-                shift=shift
+                shift=shift,
+                ftp_config=ftp_config
             )
             
             # Ajouter des métadonnées sur l'aéroport
@@ -308,13 +363,6 @@ class FlightDataScraper:
         except Exception as e:
             self.logger.error(f"Erreur pour l'aéroport {iata_code}: {e}")
             return []
-
-    def _save_flight_data(self, flights: List[Dict], num_airports: int, hour_offset: int) -> None:
-        """Sauvegarde automatique des données de vol"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        offset_suffix = f"_offset{hour_offset:+d}" if hour_offset != 1 else ""
-        filename = f"departures_top{num_airports}{offset_suffix}_{timestamp}.json"
-        self.save_to_json(flights, filename)
 
 
 def main():
@@ -333,8 +381,7 @@ def main():
     next_hour_flights = scraper.fetch_next_hour_departures_top_airports(
         num_airports=5, 
         delay=1.5, 
-        hour_offset=-24,
-        auto_save=True  # Optionnel: définir à False pour désactiver la sauvegarde automatique
+        hour_offset=-24
     )
     logger.info(f"{len(next_hour_flights)} vols de départ récupérés")
 

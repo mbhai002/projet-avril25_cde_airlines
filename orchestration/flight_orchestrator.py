@@ -19,7 +19,7 @@ from data.taf_collector import TafCollector
 from utils.mongodb_manager import MongoDBManager
 from utils.postgresql_manager import PostgreSQLManager
 from config.simple_logger import get_logger, log_operation_time, log_database_operation
-from config.collection_config import CollectionConfig, CollectionResults, CollectionType
+from config.collection_config import CollectionConfig, CollectionResults, CollectionType, get_ftp_config_from_collection_config
 
 
 class FlightOrchestrator:
@@ -43,7 +43,11 @@ class FlightOrchestrator:
         self.logger = get_logger(__name__)
         
         # Initialiser les composants
-        self.scraper = FlightDataScraper(lang="en")
+        self.scraper = FlightDataScraper(
+            lang="en",
+            use_cache_server=config.use_cache_server,
+            cache_server_url=config.cache_server_url
+        )
         self.mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
         
         # Initialiser les collecteurs XML si activés
@@ -198,11 +202,13 @@ class FlightOrchestrator:
         start_time = time.time()
         self.logger.info(f"Début collecte {description} (offset {hour_offset}h) pour {self.config.num_airports} aéroports...")
         
+        ftp_config = get_ftp_config_from_collection_config(self.config)
+        
         flights = self.scraper.fetch_next_hour_departures_top_airports(
             num_airports=self.config.num_airports,
             delay=self.config.delay,
             hour_offset=hour_offset,
-            auto_save=False
+            ftp_config=ftp_config
         )
         
         duration_ms = (time.time() - start_time) * 1000

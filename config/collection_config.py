@@ -53,6 +53,20 @@ class CollectionConfig:
     log_to_console: bool = True
     log_to_file: bool = True
     
+    # FTP Upload
+    enable_ftp_upload: bool = True
+    ftp_host: str = "7k0n6.ftp.infomaniak.com"
+    ftp_port: int = 21
+    ftp_username: str = "7k0n6_dst"
+    ftp_password: str = "DST@datascientest123"
+    ftp_use_tls: bool = False
+    ftp_remote_directory: str = "/data"
+    ftp_cleanup_max_age_hours: int = 24  # 0 = désactiver le nettoyage automatique
+    
+    # Cache Server (pour contourner Cloudflare)
+    use_cache_server: bool = False
+    cache_server_url: str = "https://dst.devlab.app/index.php"
+    
     # Métadonnées
     script_version: str = "2.0"
     source: str = "airportinfo.live"
@@ -95,3 +109,19 @@ class CollectionResults:
 def get_default_config() -> CollectionConfig:
     """Retourne la configuration par défaut"""
     return CollectionConfig()
+
+
+def get_ftp_config_from_collection_config(config: CollectionConfig) -> dict:
+    """Extrait et retourne la configuration FTP depuis CollectionConfig"""
+    if not config.enable_ftp_upload:
+        return None
+    
+    return {
+        'host': config.ftp_host,
+        'port': config.ftp_port,
+        'username': config.ftp_username,
+        'password': config.ftp_password,
+        'use_tls': config.ftp_use_tls,
+        'remote_directory': config.ftp_remote_directory,
+        'cleanup_max_age_hours': config.ftp_cleanup_max_age_hours
+    }

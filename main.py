@@ -22,14 +22,14 @@ def create_my_config() -> CollectionConfig:
     return CollectionConfig(
         # Base de données
         mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst_ml",
+        database_name="dst2",
 
         # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst_ml",
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",
 
         # Collecte
-        num_airports=10,
+        num_airports=5,
         delay=1.5,
         batch_size=500,
         enable_weather=True,  
@@ -48,7 +48,10 @@ def create_my_config() -> CollectionConfig:
         # Logging
         log_level="INFO",
         log_to_console=True,
-        log_to_file=True
+        log_to_file=True,
+
+        enable_ftp_upload = False,
+        use_cache_server = True
     )
 
 
