@@ -37,7 +37,7 @@ def create_my_config() -> CollectionConfig:
         past_hour_offset=-20,   # Décalage pour vols passés
         
         # Comportement - Modifiez selon vos besoins
-        run_once=True,              # True = une fois, False = en boucle
+        run_once=False,              # True = une fois, False = en boucle
         collect_realtime=True,      # Collecte vols temps réel
         collect_past=True,          # Collecte vols passés
         

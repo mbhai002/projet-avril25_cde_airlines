@@ -61,7 +61,6 @@ class CollectionConfig:
     ftp_password: str = "DST@datascientest123"
     ftp_use_tls: bool = False
     ftp_remote_directory: str = "/data"
-    ftp_cleanup_max_age_hours: int = 24  # 0 = désactiver le nettoyage automatique
     
     # Cache Server (pour contourner Cloudflare)
     use_cache_server: bool = False
@@ -122,6 +121,5 @@ def get_ftp_config_from_collection_config(config: CollectionConfig) -> dict:
         'username': config.ftp_username,
         'password': config.ftp_password,
         'use_tls': config.ftp_use_tls,
-        'remote_directory': config.ftp_remote_directory,
-        'cleanup_max_age_hours': config.ftp_cleanup_max_age_hours
+        'remote_directory': config.ftp_remote_directory
     }

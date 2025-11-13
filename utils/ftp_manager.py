@@ -1,9 +1,13 @@
 import os
 import json
+import requests
+import urllib3
 from ftplib import FTP, FTP_TLS
 from typing import Dict, List, Optional
 from datetime import datetime
 from config.simple_logger import get_logger
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class FTPManager:
@@ -76,24 +80,6 @@ class FTPManager:
             self.logger.error(f"Échec du listage: {e}")
             return []
     
-    def get_file_modified_time(self, filename: str) -> Optional[float]:
-        """Récupère le timestamp de modification d'un fichier"""
-        if not self.ftp:
-            return None
-        
-        try:
-            response = self.ftp.sendcmd(f'MDTM {filename}')
-            # Format: 213 YYYYMMDDhhmmss
-            if response.startswith('213 '):
-                timestamp_str = response[4:].strip()
-                from datetime import datetime
-                dt = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
-                return dt.timestamp()
-        except Exception as e:
-            self.logger.debug(f"Impossible de récupérer MDTM pour {filename}: {e}")
-        
-        return None
-    
     def delete_file(self, filename: str) -> bool:
         """Supprime un fichier sur le serveur FTP"""
         if not self.ftp:
@@ -108,13 +94,15 @@ class FTPManager:
             self.logger.error(f"Échec de la suppression de {filename}: {e}")
             return False
     
-    def cleanup_old_files(self, pattern: str = "raw_*.html", max_age_hours: int = 24) -> int:
+    def cleanup_old_files(self, pattern: str = "raw_*.html", max_age_hours: int = 24, 
+                         list_php_url: Optional[str] = None) -> int:
         """
         Supprime les fichiers correspondant au pattern et plus vieux que max_age_hours
         
         Args:
-            pattern: Pattern des fichiers à nettoyer (ex: raw_*.html)
+            pattern: Pattern des fichiers à nettoyer (non utilisé si list_php_url fourni)
             max_age_hours: Âge maximum en heures
+            list_php_url: URL de list.php pour récupération rapide
             
         Returns:
             Nombre de fichiers supprimés
@@ -123,36 +111,38 @@ class FTPManager:
             self.logger.error("Pas de connexion FTP active")
             return 0
         
+        if not list_php_url:
+            self.logger.error("list_php_url requis pour le nettoyage")
+            return 0
+        
+        self.logger.info(f"Récupération de la liste des fichiers via {list_php_url}...")
+        
         try:
-            import fnmatch
-            import time
+            response = requests.get(list_php_url, timeout=10, verify=False)
+            response.raise_for_status()
+            data = response.json()
             
-            all_files = self.list_files()
-            matching_files = [f for f in all_files if fnmatch.fnmatch(f, pattern)]
-            
-            if not matching_files:
-                self.logger.info(f"Aucun fichier correspondant à '{pattern}'")
-                return 0
+            files_list = data.get('files', [])
+            self.logger.info(f"✓ {len(files_list)} fichiers trouvés via list.php")
             
             deleted_count = 0
-            max_age_seconds = max_age_hours * 3600
-            current_time = time.time()
+            files_to_delete = []
             
-            self.logger.info(f"Analyse de {len(matching_files)} fichiers (pattern: {pattern})...")
-            
-            for filename in matching_files:
-                file_time = self.get_file_modified_time(filename)
+            # Identifier les fichiers à supprimer
+            for file_info in files_list:
+                age_hours = file_info.get('age_hours', 0)
+                filename = file_info.get('filename')
                 
-                if file_time:
-                    age_seconds = current_time - file_time
-                    age_hours = age_seconds / 3600
-                    
-                    if age_seconds > max_age_seconds:
-                        if self.delete_file(filename):
-                            deleted_count += 1
-                            self.logger.info(f"  └─ {filename} supprimé (âge: {age_hours:.1f}h)")
-                    else:
-                        self.logger.debug(f"  └─ {filename} conservé (âge: {age_hours:.1f}h)")
+                if age_hours > max_age_hours and filename:
+                    files_to_delete.append((filename, age_hours))
+            
+            # Suppression groupée
+            if files_to_delete:
+                self.logger.info(f"Suppression de {len(files_to_delete)} fichier(s) (> {max_age_hours}h)...")
+                for filename, age_hours in files_to_delete:
+                    if self.delete_file(filename):
+                        deleted_count += 1
+                        self.logger.debug(f"  └─ {filename} supprimé (âge: {age_hours:.1f}h)")
             
             if deleted_count > 0:
                 self.logger.info(f"✓ Nettoyage terminé: {deleted_count} fichier(s) supprimé(s)")
@@ -162,7 +152,7 @@ class FTPManager:
             return deleted_count
             
         except Exception as e:
-            self.logger.error(f"Erreur lors du nettoyage: {e}")
+            self.logger.error(f"Échec du nettoyage via list.php: {e}")
             return 0
     
     def __enter__(self):
