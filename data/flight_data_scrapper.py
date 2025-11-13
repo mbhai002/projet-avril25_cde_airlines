@@ -71,7 +71,7 @@ class FlightDataScraper:
         return True
 
     def fetch(self, iata_airport: str, date: str, dep_arr: str = "arrival", 
-              shift: str = "00", max_retries: int = 3, ftp_config: Optional[Dict] = None) -> List[Dict]:
+              shift: str = "00", max_retries: int = 3, ftp_manager: Optional[FTPManager] = None) -> List[Dict]:
         """
         Récupère les données de vol pour un aéroport, une date et une heure donnés
         
@@ -81,7 +81,7 @@ class FlightDataScraper:
             dep_arr: Type de vol ("arrival" ou "departure")
             shift: Heure au format HH (00-23)
             max_retries: Nombre maximum de tentatives
-            ftp_config: Configuration FTP pour envoyer la réponse brute
+            ftp_manager: Instance FTPManager déjà connectée (réutilisée)
             
         Returns:
             Liste des vols trouvés, liste vide en cas d'erreur
@@ -111,8 +111,8 @@ class FlightDataScraper:
                 self.logger.info(f"✓ Succès requête {iata_airport} shift {shift} ({dep_arr})")
                 
                 # Upload de la réponse brute vers FTP si configuré
-                if ftp_config:
-                    self._upload_raw_response_to_ftp(response, iata_airport, date, shift, dep_arr, ftp_config)
+                if ftp_manager:
+                    self._upload_raw_response_to_ftp(response, iata_airport, date, shift, dep_arr, ftp_manager)
                 
                 flights = self.parser.parse_flights_html(
                     response.text, 
@@ -179,8 +179,14 @@ class FlightDataScraper:
             self.logger.error(f"Impossible de sauvegarder dans {filename} : {e}")
             return False
 
-    def _cleanup_ftp_once(self, ftp_config: Dict) -> None:
-        """Nettoie le FTP une seule fois par session"""
+    def _cleanup_ftp_once(self, ftp_config: Dict, ftp_manager: FTPManager) -> None:
+        """
+        Nettoie le FTP une seule fois par session
+        
+        Args:
+            ftp_config: Configuration FTP (pour max_age_hours)
+            ftp_manager: Instance FTPManager déjà connectée (réutilisée)
+        """
         if self.ftp_cleaned_this_session:
             return
         
@@ -191,53 +197,45 @@ class FlightDataScraper:
         try:
             self.logger.info("🗑️  Nettoyage FTP des vieux fichiers (une fois par session)...")
             
-            with FTPManager(
-                host=ftp_config.get('host'),
-                port=ftp_config.get('port', 21),
-                username=ftp_config.get('username', ''),
-                password=ftp_config.get('password', ''),
-                use_tls=ftp_config.get('use_tls', False),
-                remote_directory=ftp_config.get('remote_directory', '/')
-            ) as ftp:
-                if ftp.ftp:
-                    deleted = ftp.cleanup_old_files(pattern="raw_*.html", max_age_hours=max_age_hours)
-                    if deleted > 0:
-                        self.logger.info(f"✓ Nettoyage FTP terminé: {deleted} fichier(s) supprimé(s)")
-                    else:
-                        self.logger.info("✓ Nettoyage FTP terminé: aucun fichier à supprimer")
-                    
-                    self.ftp_cleaned_this_session = True
+            if ftp_manager.ftp:
+                deleted = ftp_manager.cleanup_old_files(pattern="raw_*.html", max_age_hours=max_age_hours)
+                if deleted > 0:
+                    self.logger.info(f"✓ Nettoyage FTP terminé: {deleted} fichier(s) supprimé(s)")
+                else:
+                    self.logger.info("✓ Nettoyage FTP terminé: aucun fichier à supprimer")
+                
+                self.ftp_cleaned_this_session = True
                     
         except Exception as e:
             self.logger.error(f"Erreur lors du nettoyage FTP: {e}")
 
     def _upload_raw_response_to_ftp(self, response, iata_airport: str, date: str, 
-                                    shift: str, dep_arr: str, ftp_config: Dict) -> None:
-        """Upload la réponse HTTP brute vers un serveur FTP"""
+                                    shift: str, dep_arr: str, ftp_manager: FTPManager) -> None:
+        """
+        Upload la réponse HTTP brute vers un serveur FTP
+        
+        Args:
+            response: Réponse HTTP à uploader
+            iata_airport: Code IATA de l'aéroport
+            date: Date au format YYYYMMDD
+            shift: Plage horaire (ex: 0-6, 6-12)
+            dep_arr: Type (departures ou arrivals)
+            ftp_manager: Instance FTPManager déjà connectée (réutilisée)
+        """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"raw_{iata_airport}_{dep_arr}_{date}_{shift}h_{timestamp}.html"
             
-            self.logger.info(f"Upload FTP de la réponse brute: {filename}")
+            if not ftp_manager.ftp:
+                self.logger.error("✗ Pas de connexion FTP active")
+                return
             
-            with FTPManager(
-                host=ftp_config.get('host'),
-                port=ftp_config.get('port', 21),
-                username=ftp_config.get('username', ''),
-                password=ftp_config.get('password', ''),
-                use_tls=ftp_config.get('use_tls', False),
-                remote_directory=ftp_config.get('remote_directory', '/')
-            ) as ftp:
-                if ftp.ftp:
-                    from io import BytesIO
-                    content_bytes = response.content
-                    file_obj = BytesIO(content_bytes)
-                    
-                    # Upload du nouveau fichier
-                    ftp.ftp.storbinary(f'STOR {filename}', file_obj)
-                    self.logger.info(f"✓ Upload FTP réussi: {filename} ({len(content_bytes)} octets)")
-                else:
-                    self.logger.error("✗ Impossible de se connecter au serveur FTP")
+            from io import BytesIO
+            content_bytes = response.content
+            file_obj = BytesIO(content_bytes)
+            
+            ftp_manager.ftp.storbinary(f'STOR {filename}', file_obj)
+            self.logger.info(f"✓ Upload FTP réussi: {filename} ({len(content_bytes)} octets)")
                     
         except Exception as e:
             self.logger.error(f"Erreur lors de l'upload FTP de la réponse brute: {e}")
@@ -272,10 +270,6 @@ class FlightDataScraper:
         offset_desc = self._get_offset_description(hour_offset)
         self.logger.info(f"Récupération des départs pour {offset_desc} pour les {num_airports} premiers aéroports")
         
-        # Nettoyage FTP une seule fois au début de la session (si configuré)
-        if ftp_config:
-            self._cleanup_ftp_once(ftp_config)
-        
         # Charger les données des aéroports
         airports_df = self._load_airports_data()
         if airports_df is None:
@@ -288,30 +282,56 @@ class FlightDataScraper:
         all_flights = []
         utc_now = datetime.now(timezone.utc)
         
-        for index, airport in top_airports.iterrows():
-            iata_code = airport['code_iata']
-            timezone_name = airport['timezone']
-            
-            # Log de progression
-            self.logger.info(f"[{index + 1}/{num_airports}] Traitement de l'aéroport {iata_code}...")
-            
-            try:
-                flights = self._fetch_airport_flights(
-                    iata_code, timezone_name, utc_now, hour_offset, index, num_airports, ftp_config
-                )
+        # Connexion FTP unique réutilisée pour tous les uploads
+        ftp_manager = None
+        if ftp_config:
+            ftp_manager = FTPManager(
+                host=ftp_config.get('host'),
+                port=ftp_config.get('port', 21),
+                username=ftp_config.get('username', ''),
+                password=ftp_config.get('password', ''),
+                use_tls=ftp_config.get('use_tls', False),
+                remote_directory=ftp_config.get('remote_directory', '/')
+            )
+            if ftp_manager.connect():
+                self.logger.info("✓ Connexion FTP établie pour toute la session")
+                # Nettoyage FTP une seule fois au début
+                self._cleanup_ftp_once(ftp_config, ftp_manager)
+            else:
+                self.logger.warning("⚠ Impossible de se connecter au FTP, les uploads seront ignorés")
+                ftp_manager = None
+        
+        try:
+            for index, airport in top_airports.iterrows():
+                iata_code = airport['code_iata']
+                timezone_name = airport['timezone']
                 
-                if flights:
-                    all_flights.extend(flights)
-                    self.logger.info(f"✓ {iata_code}: {len(flights)} vols de départ trouvés")
-                else:
-                    self.logger.info(f"⚠ {iata_code}: Aucun vol de départ trouvé")
+                # Log de progression
+                self.logger.info(f"[{index + 1}/{num_airports}] Traitement de l'aéroport {iata_code}...")
+                
+                try:
+                    flights = self._fetch_airport_flights(
+                        iata_code, timezone_name, utc_now, hour_offset, index, num_airports, ftp_manager
+                    )
                     
-            except Exception as e:
-                self.logger.error(f"✗ {iata_code}: {e}")
-            
-            # Délai entre les requêtes (seulement si on utilise airportinfo.live)
-            if index < len(top_airports) - 1 and not self.use_cache_server:
-                time.sleep(delay)
+                    if flights:
+                        all_flights.extend(flights)
+                        self.logger.info(f"✓ {iata_code}: {len(flights)} vols de départ trouvés")
+                    else:
+                        self.logger.info(f"⚠ {iata_code}: Aucun vol de départ trouvé")
+                        
+                except Exception as e:
+                    self.logger.error(f"✗ {iata_code}: {e}")
+                
+                # Délai entre les requêtes (seulement si on utilise airportinfo.live)
+                if index < len(top_airports) - 1 and not self.use_cache_server:
+                    time.sleep(delay)
+        
+        finally:
+            # Déconnexion FTP à la fin
+            if ftp_manager:
+                ftp_manager.disconnect()
+                self.logger.info("✓ Connexion FTP fermée")
         
         self.logger.info(f"Total de {len(all_flights)} vols de départ récupérés pour l'heure cible")
         
@@ -349,7 +369,7 @@ class FlightDataScraper:
 
     def _fetch_airport_flights(self, iata_code: str, timezone_name: str, 
                              utc_now: datetime, hour_offset: int, 
-                             index: int, total: int, ftp_config: Optional[Dict] = None) -> List[Dict]:
+                             index: int, total: int, ftp_manager: Optional[FTPManager] = None) -> List[Dict]:
         """Récupère les vols pour un aéroport spécifique"""
         try:
             # Obtenir le timezone de l'aéroport
@@ -378,7 +398,7 @@ class FlightDataScraper:
                 date=date_str,
                 dep_arr="departure",
                 shift=shift,
-                ftp_config=ftp_config
+                ftp_manager=ftp_manager
             )
             
             # Ajouter des métadonnées sur l'aéroport
