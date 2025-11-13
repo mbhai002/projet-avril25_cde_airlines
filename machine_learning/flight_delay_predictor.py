@@ -1463,9 +1463,36 @@ class FlightDelayPredictor:
             delay_threshold=config['delay_threshold']
         )
         
-        # Charger les composants
-        predictor.model = joblib.load(config['model_path'])
-        predictor.preprocessor = joblib.load(config['preprocessor_path'])
+        # Résoudre les chemins relatifs par rapport à la racine du projet
+        project_root = Path(__file__).parent.parent
+        
+        def resolve_path(path_str: str) -> str:
+            """Convertit un chemin (relatif ou absolu) en chemin absolu valide"""
+            path = Path(path_str)
+            
+            # Si le chemin est absolu mais n'existe pas (ancien chemin Windows)
+            if path.is_absolute() and not path.exists():
+                # Extraire juste le nom du fichier et le chercher dans model_output
+                filename = path.name
+                new_path = project_root / "machine_learning" / "model_output" / filename
+                if new_path.exists():
+                    return str(new_path)
+            
+            # Si le chemin est relatif
+            if not path.is_absolute():
+                new_path = project_root / path
+                if new_path.exists():
+                    return str(new_path)
+            
+            # Sinon retourner le chemin original
+            return path_str
+        
+        # Charger les composants avec résolution de chemins
+        model_path = resolve_path(config['model_path'])
+        preprocessor_path = resolve_path(config['preprocessor_path'])
+        
+        predictor.model = joblib.load(model_path)
+        predictor.preprocessor = joblib.load(preprocessor_path)
         predictor.optimal_threshold = config['optimal_threshold']
         predictor.training_metrics = config['training_metrics']
         
@@ -1479,6 +1506,8 @@ class FlightDelayPredictor:
         predictor.ordered_features = config['feature_columns']['ordered']
         
         print(f"✅ Modèle chargé depuis {config_path}")
+        print(f"   Model: {Path(model_path).name}")
+        print(f"   Preprocessor: {Path(preprocessor_path).name}")
         return predictor
     
     def plot_performance_metrics(self, y_true: pd.Series, y_pred_proba: np.ndarray):

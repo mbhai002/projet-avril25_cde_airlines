@@ -4,6 +4,7 @@ import requests
 import urllib3
 import xmltodict
 import traceback
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -45,13 +46,50 @@ class TafCollector:
         # Initialiser le logger
         self.logger = get_logger(__name__)
         
-    def download_file(self) -> Optional[str]:
+    def download_file(self, max_retries: int = 5) -> Optional[str]:
         """
-        Télécharge le fichier TAF XML compressé depuis aviationweather.gov.
+        Télécharge le fichier TAF XML compressé depuis aviationweather.gov avec retry.
+        
+        Args:
+            max_retries: Nombre maximum de tentatives de téléchargement
+        
+        Returns:
+            str: Chemin vers le fichier XML décompressé, ou None en cas d'échec après toutes les tentatives
+        """
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.logger.info(f"Tentative {attempt}/{max_retries} de téléchargement TAF...")
+                result = self._download_attempt()
+                if result is not None:
+                    self.logger.info(f"✅ Téléchargement TAF réussi à la tentative {attempt}")
+                    return result
+                else:
+                    if attempt < max_retries:
+                        wait_time = attempt * 2  # Attente progressive: 2s, 4s, 6s, 8s
+                        self.logger.warning(f"Tentative {attempt} échouée, nouvelle tentative dans {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        self.logger.error(f"❌ Échec du téléchargement TAF après {max_retries} tentatives")
+            except Exception as e:
+                self.logger.error(f"Erreur à la tentative {attempt}/{max_retries}: {e}")
+                if attempt < max_retries:
+                    wait_time = attempt * 2
+                    self.logger.warning(f"Nouvelle tentative dans {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    self.logger.error(f"❌ Échec définitif après {max_retries} tentatives")
+                    traceback.print_exc()
+        
+        return None
+    
+    def _download_attempt(self) -> Optional[str]:
+        """
+        Une tentative de téléchargement du fichier TAF.
         
         Returns:
             str: Chemin vers le fichier XML décompressé, ou None en cas d'erreur
         """
+
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             gz_filename = f"tafs_{timestamp}.xml.gz"
@@ -73,10 +111,52 @@ class TafCollector:
             
             self.logger.info(f"Fichier téléchargé: {gz_filename}")
             
-            # Décompresser le fichier
-            with gzip.open(gz_filepath, 'rt', encoding='utf-8') as gz_file:
-                with open(xml_filepath, 'w', encoding='utf-8') as xml_file:
-                    xml_file.write(gz_file.read())
+            # Vérifier la taille du fichier
+            file_size = os.path.getsize(gz_filepath)
+            self.logger.info(f"Taille du fichier téléchargé: {file_size} bytes")
+            
+            if file_size < 1000:  # Fichier trop petit, probablement invalide
+                self.logger.error(f"Fichier téléchargé trop petit ({file_size} bytes), probablement corrompu")
+                os.remove(gz_filepath)
+                return None
+            
+            # Décompresser le fichier avec gestion d'erreur robuste
+            try:
+                with gzip.open(gz_filepath, 'rt', encoding='utf-8') as gz_file:
+                    with open(xml_filepath, 'w', encoding='utf-8') as xml_file:
+                        xml_file.write(gz_file.read())
+            except EOFError as eof_error:
+                self.logger.warning(f"Fichier gzip incomplet, tentative de récupération partielle: {eof_error}")
+                # Essayer de lire partiellement le fichier corrompu
+                try:
+                    with gzip.open(gz_filepath, 'rt', encoding='utf-8', errors='ignore') as gz_file:
+                        with open(xml_filepath, 'w', encoding='utf-8') as xml_file:
+                            # Lire par blocs pour éviter l'erreur EOF
+                            while True:
+                                try:
+                                    chunk = gz_file.read(8192)
+                                    if not chunk:
+                                        break
+                                    xml_file.write(chunk)
+                                except EOFError:
+                                    self.logger.warning("EOF atteint, fichier partiellement récupéré")
+                                    break
+                    
+                    # Vérifier si on a pu récupérer quelque chose
+                    if os.path.exists(xml_filepath) and os.path.getsize(xml_filepath) > 1000:
+                        self.logger.info(f"Fichier partiellement récupéré: {xml_filename}")
+                    else:
+                        self.logger.error("Impossible de récupérer le fichier, données insuffisantes")
+                        if os.path.exists(xml_filepath):
+                            os.remove(xml_filepath)
+                        os.remove(gz_filepath)
+                        return None
+                except Exception as recovery_error:
+                    self.logger.error(f"Échec de la récupération: {recovery_error}")
+                    if os.path.exists(xml_filepath):
+                        os.remove(xml_filepath)
+                    os.remove(gz_filepath)
+                    return None
             
             self.logger.info(f"Fichier décompressé: {xml_filename}")
             

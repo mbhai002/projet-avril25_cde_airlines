@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Service PostgreSQL
+  postgresql:
+    image: postgres:17.4
+    container_name: airlines_postgresql
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: airlines_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Montage du fichier SQL pour initialisation automatique
+      - ./utils/dst_postgresql.sql:/docker-entrypoint-initdb.d/01_init.sql
+      # Volume persistant pour les données
+      - postgresql_data:/var/lib/postgresql/data
+    networks:
+      - airlines_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service MongoDB
+  mongodb:
+    image: mongo:7.0
+    container_name: airlines_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: airlines_db
+    ports:
+      - "27017:27017"
+    volumes:
+      # Volume persistant pour les données
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - airlines_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: airlines_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - airlines_network
+    depends_on:
+      - postgresql
+
+volumes:
+  postgresql_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  airlines_network:
+    driver: bridge

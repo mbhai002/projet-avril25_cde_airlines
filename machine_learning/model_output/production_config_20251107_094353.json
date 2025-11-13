@@ -1,6 +1,6 @@
 {
-  "model_path": "c:\\01_dev_clb\\python\\projet-avril25_cde_airlines - 3\\machine_learning\\model_output\\flight_delay_model_20251107_094353.joblib",
-  "preprocessor_path": "c:\\01_dev_clb\\python\\projet-avril25_cde_airlines - 3\\machine_learning\\model_output\\preprocessor_20251107_094353.joblib",
+  "model_path": "machine_learning/model_output/flight_delay_model_20251107_094353.joblib",
+  "preprocessor_path": "machine_learning/model_output/preprocessor_20251107_094353.joblib",
   "optimal_threshold": 0.8038832545280457,
   "delay_threshold": 15,
   "risk_threshold_low": 0.5813606381416321,

@@ -1315,7 +1315,10 @@ class FlightOrchestrator:
         if self.config.ml_model_config_path:
             return self.config.ml_model_config_path
         
-        model_dir = Path(self.config.ml_model_dir)
+        # Construire un chemin absolu à partir de la racine du projet
+        project_root = Path(__file__).parent.parent
+        model_dir = project_root / self.config.ml_model_dir
+        
         if not model_dir.exists():
             raise FileNotFoundError(f"Repertoire modele introuvable: {model_dir}")
         
