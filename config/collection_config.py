@@ -18,12 +18,12 @@ class CollectionType(Enum):
 class CollectionConfig:
     """Configuration complète pour une collecte"""
     # Base de données MongoDB (Docker)
-    mongodb_uri="mongodb://admin:admin123@localhost:27017/"
-    database_name="airlines_db"
+    mongodb_uri: str = "mongodb://admin:admin123@localhost:27017/"
+    database_name: str = "airlines_db"
 
     # PostgreSQL (Docker)
-    enable_postgresql_insertion = True
-    postgresql_uri = "postgresql://postgres:postgres@localhost:5432/airlines_db"
+    enable_postgresql_insertion: bool = True
+    postgresql_uri: str = "postgresql://postgres:postgres@localhost:5432/airlines_db"
     
     # Machine Learning
     ml_model_dir: str = "machine_learning/model_output"

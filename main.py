@@ -50,8 +50,8 @@ def create_my_config() -> CollectionConfig:
         log_to_console=True,
         log_to_file=True,
 
-        enable_ftp_upload = False,
-        use_cache_server = True
+        enable_ftp_upload = True,
+        use_cache_server = False
     )
 
 
