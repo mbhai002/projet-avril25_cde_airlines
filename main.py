@@ -20,13 +20,13 @@ def create_my_config() -> CollectionConfig:
        
     # === VOTRE CONFIGURATION ICI ===
     return CollectionConfig(
-        # Base de données MongoDB (Docker)
-        mongodb_uri="mongodb://admin:admin123@localhost:27017/",
-        database_name="airlines_db",
+        # Base de données
+        mongodb_uri="mongodb://localhost:27017/",
+        database_name="dst2",
 
-        # PostgreSQL (Docker)
+        # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:postgres@localhost:5432/airlines_db",
+        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",   
 
         # Collecte
         num_airports=200,
