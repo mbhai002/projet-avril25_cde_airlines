@@ -1,58 +1,18 @@
 #!/usr/bin/env python3
 """
 Point d'entrée simplifié pour le collecteur de vols
-Configuration-driven, sans arguments CLI complexes
+Configuration chargée depuis .env
 """
 
 import sys
 import os
 from datetime import datetime
 
-# Ajouter le répertoire du projet au path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config.collection_config import CollectionConfig
+from config.collection_config import get_default_config
 from config.simple_logger import get_logger
 from orchestration.execution_manager import ExecutionManager
-
-
-def create_my_config() -> CollectionConfig:
-       
-    # === VOTRE CONFIGURATION ICI ===
-    return CollectionConfig(
-        # Base de données
-        mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst2",
-
-        # PostgreSQL
-        enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",   
-
-        # Collecte
-        num_airports=200,
-        delay=1.5,
-        batch_size=500,
-        enable_weather=True,  
-        hour_offset=1,          # Décalage pour vols temps réel
-        past_hour_offset=-20,   # Décalage pour vols passés
-        
-        # Comportement - Modifiez selon vos besoins
-        run_once=False,              # True = une fois, False = en boucle
-        collect_realtime=True,      # Collecte vols temps réel
-        collect_past=True,          # Collecte vols passés
-        
-        # Scheduling (si run_once=False)
-        schedule_minute=45,          # XX:45
-        loop_interval_minutes=60,   # Toutes les heures
-        
-        # Logging
-        log_level="INFO",
-        log_to_console=True,
-        log_to_file=True,
-
-        enable_ftp_upload = True,
-        use_cache_server = False
-    )
 
 
 def main():
@@ -61,11 +21,9 @@ def main():
     print(f"Démarrage à {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
-        # Créer la configuration
-        config = create_my_config()
+        config = get_default_config()
         
-        # Afficher la configuration
-        print("\nConfiguration active :")
+        print("\nConfiguration chargée depuis .env :")
         print(f"  - Run once: {config.run_once}")
         print(f"  - Collect realtime: {config.collect_realtime}")
         print(f"  - Collect past: {config.collect_past}")
@@ -76,7 +34,6 @@ def main():
         print(f"  - Weather: {config.enable_weather}")
         print("")
         
-        # Exécuter
         manager = ExecutionManager(config)
         manager.run()
         

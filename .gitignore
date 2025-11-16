@@ -5,6 +5,9 @@ ENV/
 .venv/
 .env/
 
+# Variables d'environnement (secrets)
+.env
+
 # Fichiers Python
 __pycache__/
 *.py[cod]
