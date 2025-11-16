@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.venv
+venv/
+.env
+.git
+.gitignore
+*.md
+logs/
+data/metar/*.xml
+data/taf/*.xml
+machine_learning/model_output/*.joblib
+machine_learning/model_output/*.json
+machine_learning/model_output/*.csv

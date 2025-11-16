@@ -46,6 +46,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # Service Application Python
+  flight-collector:
+    build: .
+    container_name: airlines_app
+    env_file:
+      - .env
+    environment:
+      - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
+      - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./machine_learning/model_output:/app/machine_learning/model_output
+    networks:
+      - airlines_network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Service pgAdmin
   pgadmin:
     image: dpage/pgadmin4:latest
