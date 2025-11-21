@@ -21,12 +21,12 @@ def create_my_config() -> CollectionConfig:
     # === VOTRE CONFIGURATION ICI ===
     return CollectionConfig(
         # Base de données
-        mongodb_uri="mongodb://localhost:27017/",
-        database_name="dst2",
+       # mongodb_uri="mongodb://localhost:27017/",
+       # database_name="dst2",
 
         # PostgreSQL
         enable_postgresql_insertion = True,
-        postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",   
+       # postgresql_uri = "postgresql://postgres:cdps%40973@localhost:5433/dst4",   
 
         # Collecte
         num_airports=200,
@@ -42,7 +42,7 @@ def create_my_config() -> CollectionConfig:
         collect_past=True,          # Collecte vols passés
         
         # Scheduling (si run_once=False)
-        schedule_minute=45,          # XX:45
+        schedule_minute=30,          # XX:30
         loop_interval_minutes=60,   # Toutes les heures
         
         # Logging
@@ -50,8 +50,8 @@ def create_my_config() -> CollectionConfig:
         log_to_console=True,
         log_to_file=True,
 
-        enable_ftp_upload = True,
-        use_cache_server = False
+        enable_ftp_upload = False,
+        use_cache_server = True
     )
 
 

@@ -50,3 +50,4 @@ logs/
 *.bson
 dumps/
 data/__pycache__/flight_data_scrapper.cpython-311.pyc
+web/backup_dst/
