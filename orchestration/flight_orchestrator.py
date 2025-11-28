@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 from pathlib import Path
 import time
+from pymongo import UpdateOne
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -674,8 +675,19 @@ class FlightOrchestrator:
             
             self.logger.info(f"{total_flights} vols trouvés pour association METAR (doublons code-share exclus)")
             
-            # Récupérer les vols selon le filtre défini
-            current_flights = list(flights_collection.find(flights_filter))
+            # Créer des index pour optimiser les performances
+            if not self._indexes_created:
+                try:
+                    flights_collection.create_index([("_metadata.collection_session_id", 1)])
+                    flights_collection.create_index([("from_code", 1)])
+                    self.logger.info("Index créés sur la collection flight")
+                    self._indexes_created = True
+                except Exception as e:
+                    self.logger.warning(f"Index déjà existants ou erreur: {e}")
+            
+            # Récupérer uniquement les champs nécessaires avec projection
+            projection = {"_id": 1, "from_code": 1}
+            current_flights = list(flights_collection.find(flights_filter, projection))
             
             if not current_flights:
                 self.logger.info("Aucun vol trouvé pour l'association")
@@ -685,16 +697,13 @@ class FlightOrchestrator:
             # Récupérer tous les derniers METAR (le plus récent pour chaque station)
             latest_metars_pipeline = [
                 {
-                    "$sort": {"observation_time": -1}  # Trier par heure d'observation décroissante
+                    "$sort": {"observation_time": -1}
                 },
                 {
                     "$group": {
-                        "_id": "$station_id",  # Grouper par station (sans @)
-                        "latest_metar": {"$first": "$$ROOT"}  # Prendre le plus récent
+                        "_id": "$station_id",
+                        "metar_object_id": {"$first": "$_id"}
                     }
-                },
-                {
-                    "$replaceRoot": {"newRoot": "$latest_metar"}  # Remplacer la racine
                 }
             ]
             
@@ -707,47 +716,48 @@ class FlightOrchestrator:
             
             self.logger.info(f"Association de {len(current_flights)} vols avec {len(latest_metars)} derniers METAR (toutes stations)")
             
-            # Créer un index de recherche METAR par station ICAO
-            metar_by_icao = {}
-            for metar in latest_metars:
-                station_id = metar.get('station_id')  # Utiliser station_id (sans @)
-                if station_id:
-                    metar_by_icao[station_id] = metar.get('_id')
+            # Créer un dictionnaire ICAO -> metar_id optimisé
+            metar_by_icao = {m['_id']: m['metar_object_id'] for m in latest_metars}
             
             self.logger.info(f"Index METAR créé pour {len(metar_by_icao)} stations ICAO")
             
-            # Parcourir chaque vol et chercher les correspondances
-            flights_updated = 0
+            # Préparer les opérations en batch avec bulk_write
+            bulk_operations = []
+            flights_with_match = 0
             
             for flight in current_flights:
                 try:
-                    flight_updated = False
-                    update_fields = {}
-                    
-                    # Traiter uniquement l'aéroport de départ
                     departure_iata = flight.get('from_code', '')
                     if departure_iata and departure_iata in iata_icao_mapping:
                         departure_icao = iata_icao_mapping[departure_iata]
                         if departure_icao in metar_by_icao:
-                            update_fields['metar_id'] = metar_by_icao[departure_icao]
-                            flight_updated = True
-                            self.logger.debug(f"Vol {flight.get('_id')}: {departure_iata} -> METAR {metar_by_icao[departure_icao]}")
-                    
-                    # Mettre à jour le vol si une correspondance a été trouvée
-                    if flight_updated:
-                        # Ajouter les métadonnées d'association
-                        update_fields['_metadata.metar_associated'] = True
-                        update_fields['_metadata.metar_association_date'] = operation_start_time.isoformat()
-                        
-                        flights_collection.update_one(
-                            {"_id": flight["_id"]},
-                            {"$set": update_fields}
-                        )
-                        flights_updated += 1
+                            bulk_operations.append(
+                                UpdateOne(
+                                    {"_id": flight["_id"]},
+                                    {"$set": {
+                                        "metar_id": metar_by_icao[departure_icao],
+                                        "_metadata.metar_associated": True,
+                                        "_metadata.metar_association_date": operation_start_time.isoformat()
+                                    }}
+                                )
+                            )
+                            flights_with_match += 1
                         
                 except Exception as e:
-                    error_msg = f"Erreur lors de l'association du vol {flight.get('_id', 'unknown')}: {e}"
+                    error_msg = f"Erreur lors de la préparation du vol {flight.get('_id', 'unknown')}: {e}"
                     self.logger.warning(error_msg)
+                    results.errors.append(error_msg)
+            
+            # Exécuter les mises à jour en batch
+            flights_updated = 0
+            if bulk_operations:
+                self.logger.info(f"Exécution de {len(bulk_operations)} mises à jour en batch...")
+                try:
+                    result = flights_collection.bulk_write(bulk_operations, ordered=False)
+                    flights_updated = result.modified_count
+                except Exception as e:
+                    error_msg = f"Erreur lors du bulk_write: {e}"
+                    self.logger.error(error_msg)
                     results.errors.append(error_msg)
             
             self.logger.info(f"✓ {flights_updated} vols mis à jour avec des associations METAR")

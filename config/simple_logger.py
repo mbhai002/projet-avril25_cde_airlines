@@ -5,13 +5,18 @@ Configuration du logging pour le projet DST Airlines
 
 import logging
 import os
+import atexit
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
+from queue import Queue
+
+
+_queue_listener = None
 
 
 def setup_simple_logger(name: str = __name__, level: str = "INFO") -> logging.Logger:
     """
-    Configure un logger simple avec console et fichier
+    Configure un logger simple avec console et fichier (thread-safe pour Windows)
     
     Args:
         name: Nom du logger
@@ -20,6 +25,8 @@ def setup_simple_logger(name: str = __name__, level: str = "INFO") -> logging.Lo
     Returns:
         Logger configuré
     """
+    global _queue_listener
+    
     # Créer le répertoire logs s'il n'existe pas
     logs_dir = "logs"
     if not os.path.exists(logs_dir):
@@ -43,19 +50,35 @@ def setup_simple_logger(name: str = __name__, level: str = "INFO") -> logging.Lo
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.setLevel(getattr(logging, level.upper()))
-    logger.addHandler(console_handler)
     
-    # Handler fichier avec rotation (max 100 Mo, 5 fichiers de backup)
+    # Handler fichier avec rotation journalière (évite les problèmes de verrouillage Windows)
     log_filename = os.path.join(logs_dir, "application.log")
-    file_handler = RotatingFileHandler(
+    file_handler = TimedRotatingFileHandler(
         log_filename,
-        maxBytes=100 * 1024 * 1024,  # 100 Mo
-        backupCount=5,
-        encoding='utf-8'
+        when='midnight',
+        interval=1,
+        backupCount=30,
+        encoding='utf-8',
+        delay=False
     )
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)  # Tout sauvegarder dans le fichier
-    logger.addHandler(file_handler)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Utiliser une queue pour thread-safety (solution recommandée pour Windows multi-thread)
+    if _queue_listener is None:
+        log_queue = Queue(-1)
+        queue_handler = QueueHandler(log_queue)
+        
+        _queue_listener = QueueListener(log_queue, console_handler, file_handler, respect_handler_level=True)
+        _queue_listener.start()
+        
+        # Arrêter proprement le listener à la fin
+        atexit.register(_queue_listener.stop)
+        
+        logger.addHandler(queue_handler)
+    else:
+        queue_handler = QueueHandler(_queue_listener.queue)
+        logger.addHandler(queue_handler)
     
     # Empêcher la propagation
     logger.propagate = False

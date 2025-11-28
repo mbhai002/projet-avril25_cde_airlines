@@ -16,3 +16,13 @@ pip install -r requirements.txt (installs packages)
 
 sous Windows : 
 .venv\Scripts\activate.bat
+
+
+Docker : 
+#Fermer tous les container et supprimer les volumes:
+docker-compose down -v
+#Lancer les containers : 
+docker-compose up -d
+
+#lancer les services en arrière-plan mais suivre les logs
+docker-compose up -d && docker-compose logs -f flight-collector

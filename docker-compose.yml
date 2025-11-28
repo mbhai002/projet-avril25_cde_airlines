@@ -48,7 +48,9 @@ services:
 
   # Service Application Python
   flight-collector:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: airlines_app
     env_file:
       - .env
@@ -56,9 +58,15 @@ services:
       - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
       - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
     volumes:
-      - ./logs:/app/logs
+      # Montage du code source pour le développement
+      - ./config:/app/config
       - ./data:/app/data
-      - ./machine_learning/model_output:/app/machine_learning/model_output
+      - ./orchestration:/app/orchestration
+      - ./utils:/app/utils
+      - ./machine_learning:/app/machine_learning
+      - ./main.py:/app/main.py
+      # Volumes pour les données persistantes
+      - ./logs:/app/logs
     networks:
       - airlines_network
     depends_on:
@@ -76,10 +84,14 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
       PGADMIN_LISTEN_PORT: 80
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     ports:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin_servers.json:/pgadmin4/servers.json
+      - ./config/pgadmin_pgpass:/pgpass
     networks:
       - airlines_network
     depends_on:
