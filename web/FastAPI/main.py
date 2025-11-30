@@ -1,10 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
+from psycopg2 import pool
 import psycopg2.extras
 from typing import List
 from pydantic import BaseModel
 from datetime import date
+from decimal import Decimal
+import atexit
 
 app = FastAPI(
     title="DST Airlines API",
@@ -28,26 +31,75 @@ DB_CONFIG = {
     'password': 'postgres'
 }
 
+# Pool de connexions: maintient 1-10 connexions reutilisables pour eviter de creer/fermer
+# une nouvelle connexion a chaque requete, ce qui accelere considerablement l'API
+connection_pool = psycopg2.pool.SimpleConnectionPool(1, 10, **DB_CONFIG)
+
 def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    """Recupere une connexion du pool"""
+    return connection_pool.getconn()
+
+def return_db_connection(conn):
+    """Retourne la connexion au pool pour reutilisation"""
+    connection_pool.putconn(conn)
+
+@atexit.register
+def close_pool():
+    """Ferme le pool de connexions a la sortie de l'application"""
+    if connection_pool:
+        connection_pool.closeall()
+
+def init_db_indexes():
+    """Cree les index sur les colonnes les plus utilisees pour accelerer les requetes"""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_flight_departure_scheduled ON flight(departure_scheduled_utc)",
+            "CREATE INDEX IF NOT EXISTS idx_flight_number ON flight(flight_number)",
+            "CREATE INDEX IF NOT EXISTS idx_flight_ml ON flight(delay_prob, delay_risk_level) WHERE delay_prob IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_flight_airline ON flight(airline_code)",
+            "CREATE INDEX IF NOT EXISTS idx_metar_station ON metar(station_id)",
+            "CREATE INDEX IF NOT EXISTS idx_taf_station ON taf(station_id)"
+        ]
+        for idx_query in indexes:
+            cur.execute(idx_query)
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Erreur creation index: {e}")
+    finally:
+        return_db_connection(conn)
+
+def clean_value(value):
+    """Convertit les Decimal en float pour la serialisation JSON"""
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 def execute_query(query):
+    """Execute une requete SQL et retourne tous les resultats"""
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(query)
-    results = cur.fetchall()
-    cur.close()
-    conn.close()
-    return results
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(query)
+        results = [{k: clean_value(v) for k, v in dict(row).items()} for row in cur.fetchall()]
+        cur.close()
+        return results
+    finally:
+        return_db_connection(conn)
 
 def execute_query_one(query):
+    """Execute une requete SQL et retourne un seul resultat"""
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(query)
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
-    return result
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(query)
+        result = cur.fetchone()
+        cur.close()
+        return result
+    finally:
+        return_db_connection(conn)
 
 class FlightStats(BaseModel):
     total_flights: int
@@ -104,10 +156,60 @@ class MeteoCondition(BaseModel):
 
 @app.get("/")
 def root():
+    """Point d'entree de l'API"""
     return {"message": "DST Airlines API", "version": "1.0.0"}
+
+@app.get("/search-flights")
+def search_flights(
+    flight_number: str = None,
+    departure_date: str = None,
+    date_start: str = None,
+    date_end: str = None,
+    limit: int = None
+):
+    """Recherche de vols avec filtres optionnels sur numero, dates et limite de resultats"""
+    where_clauses = ["departure_scheduled_utc IS NOT NULL"]
+    
+    if flight_number:
+        where_clauses.append(f"flight_number ILIKE '%{flight_number}%'")
+    if departure_date:
+        where_clauses.append(f"DATE(departure_scheduled_utc) = '{departure_date}'")
+    if date_start:
+        where_clauses.append(f"DATE(departure_scheduled_utc) >= '{date_start}'")
+    if date_end:
+        where_clauses.append(f"DATE(departure_scheduled_utc) <= '{date_end}'")
+    
+    where_sql = " AND ".join(where_clauses)
+    limit_clause = f"LIMIT {limit}" if limit is not None else ""
+    
+    query = f"""
+    SELECT 
+        flight_number,
+        from_airport,
+        to_airport,
+        airline_code,
+        departure_scheduled_utc::text as departure_scheduled_utc,
+        arrival_scheduled_utc::text as arrival_scheduled_utc,
+        arrival_actual_utc::text as arrival_actual_utc,
+        delay_min,
+        delay_prob,
+        delay_risk_level,
+        CASE 
+            WHEN delay_prob > 0.5 THEN 'OUI'
+            WHEN delay_prob IS NOT NULL THEN 'NON'
+            ELSE 'N/A'
+        END as prediction_retard
+    FROM flight
+    WHERE {where_sql}
+    ORDER BY departure_scheduled_utc DESC
+    {limit_clause}
+    """
+    
+    return execute_query(query)
 
 @app.get("/stats", response_model=FlightStats)
 def get_flight_stats(delay_threshold: int = 10):
+    """Statistiques globales des vols avec taux de retard et precision ML"""
     query = f"""
         SELECT 
             COUNT(*) as total_flights,
@@ -131,6 +233,7 @@ def get_flight_stats(delay_threshold: int = 10):
 
 @app.get("/stats/daily", response_model=List[DailyStats])
 def get_daily_stats(delay_threshold: int = 10):
+    """Statistiques journalieres pour suivre l'evolution des retards dans le temps"""
     query = f"""
         SELECT 
             departure_scheduled_utc::date as date,
@@ -145,6 +248,7 @@ def get_daily_stats(delay_threshold: int = 10):
 
 @app.get("/stats/hourly", response_model=List[HourlyStats])
 def get_hourly_stats(delay_threshold: int = 10):
+    """Statistiques par heure de depart pour identifier les heures a risque"""
     query = f"""
         SELECT 
             EXTRACT(HOUR FROM departure_scheduled_utc)::int as hour,
@@ -158,6 +262,7 @@ def get_hourly_stats(delay_threshold: int = 10):
 
 @app.get("/stats/airlines", response_model=List[AirlineStats])
 def get_airline_stats(delay_threshold: int = 10, top: int = 15):
+    """Statistiques par compagnie aerienne classees par taux de retard"""
     query = f"""
         WITH ranked_airlines AS (
             SELECT 
@@ -176,6 +281,7 @@ def get_airline_stats(delay_threshold: int = 10, top: int = 15):
 
 @app.get("/ml/confusion", response_model=MLConfusion)
 def get_ml_confusion(delay_threshold: int = 10):
+    """Matrice de confusion du modele ML avec vrais/faux positifs et negatifs"""
     query = f"""
         SELECT 
             SUM(CASE WHEN delay_prob > 0.5 AND delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as tp,
@@ -195,6 +301,7 @@ def get_ml_confusion(delay_threshold: int = 10):
 
 @app.get("/ml/risk-distribution", response_model=List[RiskDistribution])
 def get_risk_distribution():
+    """Distribution des vols par niveau de risque de retard (low/medium/high)"""
     query = """
         SELECT 
             delay_risk_level,
@@ -213,6 +320,7 @@ def get_risk_distribution():
 
 @app.get("/meteo/stats", response_model=MeteoStats)
 def get_meteo_stats():
+    """Statistiques sur les donnees meteo METAR et TAF collectees"""
     query = """
         SELECT 
             (SELECT COUNT(*)::int FROM metar) as total_metar,
@@ -229,6 +337,7 @@ def get_meteo_stats():
 
 @app.get("/meteo/flight-categories", response_model=List[MeteoCondition])
 def get_flight_categories():
+    """Distribution des categories de vol selon les conditions meteo (VFR/IFR/MVFR/LIFR)"""
     query = """
         SELECT 
             COALESCE(flight_category, 'UNKNOWN') as condition,
@@ -243,6 +352,7 @@ def get_flight_categories():
 
 @app.get("/meteo/weather-conditions", response_model=List[MeteoCondition])
 def get_weather_conditions():
+    """Top 20 des conditions meteorologiques observees (pluie/neige/brouillard/etc)"""
     query = """
         SELECT 
             COALESCE(wx_string, 'CLEAR') as condition,
@@ -258,6 +368,7 @@ def get_weather_conditions():
 
 @app.get("/meteo/top-airports")
 def get_top_airports(limit: int = 20):
+    """Top aeroports avec moyennes meteo (temperature/vent/visibilite)"""
     query = f"""
         SELECT 
             station_id as airport,
@@ -273,104 +384,14 @@ def get_top_airports(limit: int = 20):
     """
     return execute_query(query)
 
-@app.get("/correlations/conditions")
-def get_conditions_delay_correlation(delay_threshold: int = 10, top: int = 20):
-    query = f"""
-        SELECT 
-            m.flight_category as condition,
-            COUNT(f.id)::int as total_flights,
-            SUM(CASE WHEN f.delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as delayed_flights,
-            ROUND(AVG(CASE WHEN f.delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate,
-            ROUND(AVG(f.delay_min)::numeric, 2) as avg_delay_min
-        FROM flight f
-        INNER JOIN metar m ON f.departure_metar_fk = m.id
-        WHERE m.flight_category IS NOT NULL
-        GROUP BY m.flight_category
-        HAVING COUNT(f.id) >= 10
-        ORDER BY delay_rate DESC
-        LIMIT {top}
-    """
-    return execute_query(query)
-
-@app.get("/correlations/visibility")
-@app.get("/correlations/visibility-delays")
-def get_visibility_delay_correlation(delay_threshold: int = 10):
-    query = f"""
-        WITH visibility_ranges AS (
-            SELECT 
-                f.id,
-                f.delay_min,
-                CASE 
-                    WHEN m.visibility_statute_mi < 1 THEN '< 1 mile'
-                    WHEN m.visibility_statute_mi < 3 THEN '1-3 miles'
-                    WHEN m.visibility_statute_mi < 5 THEN '3-5 miles'
-                    WHEN m.visibility_statute_mi < 10 THEN '5-10 miles'
-                    ELSE '>= 10 miles'
-                END as visibility_range
-            FROM flight f
-            INNER JOIN metar m ON f.departure_metar_fk = m.id
-            WHERE m.visibility_statute_mi IS NOT NULL
-        )
-        SELECT 
-            visibility_range,
-            COUNT(id)::int as total_flights,
-            SUM(CASE WHEN delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as delayed_flights,
-            ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate
-        FROM visibility_ranges
-        GROUP BY visibility_range
-        ORDER BY 
-            CASE 
-                WHEN visibility_range = '< 1 mile' THEN 1
-                WHEN visibility_range = '1-3 miles' THEN 2
-                WHEN visibility_range = '3-5 miles' THEN 3
-                WHEN visibility_range = '5-10 miles' THEN 4
-                ELSE 5
-            END
-    """
-    return execute_query(query)
-
-@app.get("/correlations/wind")
-@app.get("/correlations/wind-delays")
-def get_wind_delay_correlation(delay_threshold: int = 10):
-    query = f"""
-        WITH wind_ranges AS (
-            SELECT 
-                f.id,
-                f.delay_min,
-                CASE 
-                    WHEN m.wind_speed_kt < 5 THEN '0-5 kt'
-                    WHEN m.wind_speed_kt < 10 THEN '5-10 kt'
-                    WHEN m.wind_speed_kt < 15 THEN '10-15 kt'
-                    WHEN m.wind_speed_kt < 20 THEN '15-20 kt'
-                    ELSE '>= 20 kt'
-                END as wind_range
-            FROM flight f
-            INNER JOIN metar m ON f.departure_metar_fk = m.id
-            WHERE m.wind_speed_kt IS NOT NULL
-        )
-        SELECT 
-            wind_range,
-            COUNT(id)::int as total_flights,
-            SUM(CASE WHEN delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as delayed_flights,
-            ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate
-        FROM wind_ranges
-        GROUP BY wind_range
-        ORDER BY 
-            CASE 
-                WHEN wind_range = '0-5 kt' THEN 1
-                WHEN wind_range = '5-10 kt' THEN 2
-                WHEN wind_range = '10-15 kt' THEN 3
-                WHEN wind_range = '15-20 kt' THEN 4
-                ELSE 5
-            END
-    """
-    return execute_query(query)
-
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*70)
     print("FASTAPI SERVER - DST AIRLINES")
     print("="*70)
+    print("Initialisation index base de donnees...")
+    init_db_indexes()
+    print("Index crees avec succes")
     print("API: http://127.0.0.1:8000")
     print("Docs: http://127.0.0.1:8000/docs")
     print("="*70 + "\n")

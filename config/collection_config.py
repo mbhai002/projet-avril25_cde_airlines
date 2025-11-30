@@ -17,11 +17,11 @@ class CollectionType(Enum):
 @dataclass
 class CollectionConfig:
     """Configuration complète pour une collecte"""
-    # Base de données MongoDB (Docker)
-    mongodb_uri: str = "mongodb://admin:admin123@localhost:27017/"
+    # Base de données MongoDB (Docker) - DESACTIVE car on utilise directement PostgreSQL
+    mongodb_uri: str = "mongodb://localhost:27017/"
     database_name: str = "airlines_db"
 
-    # PostgreSQL (Docker)
+    # PostgreSQL (Docker) - BASE PRINCIPALE
     enable_postgresql_insertion: bool = True
     postgresql_uri: str = "postgresql://postgres:postgres@localhost:5432/airlines_db"
     
@@ -29,6 +29,11 @@ class CollectionConfig:
     ml_model_dir: str = "machine_learning/model_output"
     ml_model_config_path: str = None  # None = utiliser le modèle le plus récent
     enable_ml_prediction: bool = True  # Active la prédiction ML automatique après insertion PostgreSQL
+    
+    # Affichage des données (pour interface de recherche)
+    display_predictions: bool = True  # Afficher les prédictions ML
+    display_real_data: bool = True  # Afficher les données réelles
+    display_comparison: bool = True  # Afficher la comparaison prédiction vs réel
     
     # Collecte
     num_airports: int = 200
