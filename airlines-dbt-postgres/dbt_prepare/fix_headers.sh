@@ -20,7 +20,7 @@ add_header_if_missing() {
   fi
 }
 
-# === Appels pour les 3 fichiers OpenFlights ===
+# === Appels pour les fichiers OpenFlights ===
 
 add_header_if_missing ${SEED_TARGET_DIR}"/openfligths_airlines.csv" \
 "id,name,alias,iata,icao,callsign,country_name,active" \
@@ -33,3 +33,7 @@ add_header_if_missing ${SEED_TARGET_DIR}"/openfligths_airports.csv" \
 add_header_if_missing ${SEED_TARGET_DIR}"/openfligths_routes.csv" \
 "airline_iata,airline_id,source_airport_iata,source_airport_id,dest_airport_iata,dest_airport_id,shared,stops,equipments" \
 "openfligths_routes.csv"
+
+add_header_if_missing ${SEED_TARGET_DIR}"/openfligths_planes.csv" \
+"name,iata_code,icao_code" \
+"openfligths_planes.csv"

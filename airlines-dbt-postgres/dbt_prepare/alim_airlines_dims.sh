@@ -46,17 +46,18 @@ log() {
 }
 
 ###############################
-# CHECK DIRECTORIES
+# CREATE DIRECTORIES
 ###############################
 
-for d in "$ROOT_DEP_DIR" "$OURAIRPORTS_DIR" "$OPENFLIGHTS_DIR" "$OPENTRAVELDATA_DIR" "$STATSBASE_DIR"; do
-    if [ ! -d "$d" ]; then
-        log "ERREUR : Répertoire introuvable : $d"
-        exit 1
-    fi
-done
-
+mkdir -p "$ROOT_DEP_DIR"
+mkdir -p "$OURAIRPORTS_DIR"
+mkdir -p "$OPENFLIGHTS_DIR"
+mkdir -p "$OPENTRAVELDATA_DIR"
+mkdir -p "$STATSBASE_DIR"
 mkdir -p "$TO_PROCESS_DIR"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log "Répertoires initialisés"
 
 ###############################
 # GET FILE DATE
@@ -155,7 +156,7 @@ for fname in "airports.csv" "runways.csv" "countries.csv"; do
 done
 
 # OpenFlights
-for fname in "airports.dat" "airlines.dat" "planes.dat"; do
+for fname in "airports.dat" "airlines.dat" "planes.dat" "routes.dat"; do
     fname_process "$fname" "$OPENFLIGHTS_DIR"
 done
 

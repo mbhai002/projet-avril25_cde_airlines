@@ -54,3 +54,10 @@ logs/
 *.bson
 dumps/
 data/__pycache__/flight_data_scrapper.cpython-311.pyc
+
+
+#DBT
+/airlines-dbt-postgres/data/
+# Fichiers CSV (sauf statsbase)
+/airlines-dbt-postgres/dbt/seeds/*.csv
+!/airlines-dbt-postgres/dbt/seeds/statsbase*.csv

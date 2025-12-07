@@ -23,14 +23,12 @@ models:
       - name: country_code
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_countries')
-                field: code
+              to: ref('dim_countries')
+              field: code
       - name: active
         tests:
           - accepted_values:
-              arguments:
-                values: ['Y', 'N']
+              values: ['Y', 'N']
 
   - name: dim_airports
     description: "Dimension des aéroports"
@@ -44,9 +42,8 @@ models:
       - name: iso_country
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_countries')
-                field: code
+              to: ref('dim_countries')
+              field: code
 
   - name: dim_routes
     description: "Dimension des routes commerciales"
@@ -62,11 +59,10 @@ models:
           - not_null
     tests:
       - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - airline_iata
-              - source_airport_iata
-              - dest_airport_iata
+          combination_of_columns:
+            - airline_iata
+            - source_airport_iata
+            - dest_airport_iata
 
   - name: dim_runways
     description: "Dimension des pistes d'aéroports"
@@ -78,6 +74,5 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_airports')
-                field: id
+              to: ref('dim_airports')
+              field: id

@@ -2,7 +2,7 @@
 
 # Démarre uniquement Postgres
 up:
-	docker compose up -d postgres
+	docker compose up -d postgres pgadmin
 
 # Prépare l'environnement (par ex. installation dépendances)
 prepare: up

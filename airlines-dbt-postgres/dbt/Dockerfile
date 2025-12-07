@@ -18,7 +18,7 @@ ENV PATH="/dbt_venv/bin:$PATH"
 
 # Installer dbt postgres
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r ./requirements.txt
+RUN pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --no-cache-dir -r ./requirements.txt
 
 # Copier scripts
 COPY entrypoint.sh /entrypoint.sh

@@ -36,5 +36,5 @@ models:
       +schema: int
       +materialized: table
     mart:
-      +schema: dwh
+      +schema: public
       +materialized: incremental

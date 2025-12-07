@@ -33,4 +33,5 @@ def download_age_mean_airlines(Groupby='company'):
 if __name__ == "__main__":
     # download_age_mean_airlines('country')
     # download_age_mean_airlines('company')
-    print("Ce script est à reprendre car lors de l'exécution de fetch_statbase_table dans le container,  resp = requests.get(url, headers=headers) -> resp.text  ne renvoit pas une table mais du javascript") 
+    print("Ce script est à reprendre car lors de l'exécution de fetch_statbase_table dans le container,  resp = requests.get(url, headers=headers) -> resp.text  ne renvoit pas une table mais du javascript")
+    exit(0) 
