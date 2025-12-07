@@ -134,6 +134,44 @@ services:
       postgresql:
         condition: service_healthy
 
+  # Service FastAPI
+  fastapi:
+    build:
+      context: ./web/FastAPI
+      dockerfile: Dockerfile
+    container_name: airlines_fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./web/FastAPI/main.py:/app/main.py
+    environment:
+      - DB_HOST=airlines_postgresql
+    networks:
+      - airlines_network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Service Dash
+  dash:
+    build:
+      context: ./web/dash
+      dockerfile: Dockerfile
+    container_name: airlines_dash
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./web/dash/app.py:/app/app.py
+      - ./web/dash/pages:/app/pages
+    environment:
+      - API_URL=http://airlines_fastapi:8000
+    networks:
+      - airlines_network
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
 volumes:
   postgresql_data:
     driver: local

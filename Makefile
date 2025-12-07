@@ -1,8 +1,8 @@
-.PHONY: help up down restart logs clean all dbt-prepare dbt-seed dbt-run dbt-all build
+.PHONY: help up down restart logs clean all dbt-prepare dbt-seed dbt-run dbt-all build web-build web-up web-down web-logs
 
 help:
 	@echo "Commandes disponibles:"
-	@echo "  make build           - Reconstruit les images Docker"
+	@echo "  make build           - Reconstruit les images Docker DBT"
 	@echo "  make up              - Démarre tous les services"
 	@echo "  make down            - Arrête tous les services"
 	@echo "  make restart         - Redémarre tous les services"
@@ -12,6 +12,10 @@ help:
 	@echo "  make dbt-seed        - Charge les seeds DBT"
 	@echo "  make dbt-run         - Exécute les transformations DBT"
 	@echo "  make dbt-all         - Pipeline complet DBT (prepare + seed + run)"
+	@echo "  make web-build       - Reconstruit les images FastAPI et Dash"
+	@echo "  make web-up          - Démarre FastAPI et Dash"
+	@echo "  make web-down        - Arrête FastAPI et Dash"
+	@echo "  make web-logs        - Affiche les logs FastAPI et Dash"
 	@echo "  make all             - Démarre tout (services + pipeline DBT)"
 
 build:
@@ -56,6 +60,26 @@ dbt-run:
 
 dbt-all: dbt-prepare dbt-seed dbt-run
 
+web-build:
+	@echo "Reconstruction des images Web..."
+	docker compose build --no-cache fastapi dash
+	@echo "Images Web reconstruites!"
+
+web-up:
+	@echo "Démarrage des services Web..."
+	docker compose up -d fastapi dash
+	@echo "FastAPI: http://localhost:8000"
+	@echo "Docs API: http://localhost:8000/docs"
+	@echo "Dashboard: http://localhost:8050"
+
+web-down:
+	@echo "Arrêt des services Web..."
+	docker compose stop fastapi dash
+	@echo "Services Web arrêtés!"
+
+web-logs:
+	docker compose logs -f fastapi dash
+
 all:
 	@echo "=== Démarrage du projet complet ==="
 	@$(MAKE) up
@@ -68,5 +92,10 @@ all:
 	@echo ""
 	@echo "=== Projet complet démarré! ==="
 	@echo "PostgreSQL: localhost:5432"
+	@echo "MongoDB: localhost:27017"
+	@echo "pgAdmin: http://localhost:5050"
+	@echo "FastAPI: http://localhost:8000"
+	@echo "API Docs: http://localhost:8000/docs"
+	@echo "Dashboard: http://localhost:8050"
 	@echo "MongoDB: localhost:27017"
 	@echo "pgAdmin: http://localhost:5050"
