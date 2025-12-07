@@ -7,6 +7,7 @@ ENV/
 
 # Variables d'environnement (secrets)
 .env
+.env.aws
 
 # Fichiers Python
 __pycache__/

@@ -1,0 +1,48 @@
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_dev
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT}:${DBT_PORT_CONTAINER}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      - dbt-net
+
+  dbt_prepare:
+    build: ./dbt_prepare
+    container_name: dbt_prepare
+    volumes:
+      - ${DBT_SOURCE_DIR}:/seed_source 
+      - ${DBT_TARGET_DIR}:/seeds # target seeds mounted into container (and into dbt container in /app/seeds)
+    environment:
+      SOURCE_DIR: /seed_source
+      TARGET_DIR: /seeds
+    networks:
+      - dbt-net
+
+  dbt:
+    build: ./dbt
+    depends_on:
+      - postgres
+    volumes:
+      - ./dbt:/app
+    environment:
+      DBT_HOST: postgres
+      DBT_PORT: ${DBT_PORT_CONTAINER}
+      DBT_USER: ${POSTGRES_USER}
+      DBT_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_DBNAME: ${POSTGRES_DB}
+    networks:
+      - dbt-net
+
+volumes:
+  pgdata:
+
+networks:
+  dbt-net:
+

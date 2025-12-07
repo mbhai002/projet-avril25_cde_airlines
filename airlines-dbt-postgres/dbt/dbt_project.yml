@@ -1,0 +1,40 @@
+name: 'airlines_dbt_postgres'
+version: '1.0'
+config-version: 2
+profile: 'airlines_profile'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+seeds:
+  +schema: raw                    # <-- schéma commun à tous les seeds
+  +quote_columns: false           # <-- colonnes non quotées par défaut
+  +delimiter: ","                 # <-- séparateur commun
+  +header: true                   # <-- indique que les seeds ont une ligne d’en-tête
+  +encoding: UTF-8                # <-- encodage par défaut
+  +materialized: seed             # <-- comportement par défaut
+  airlines_dbt_postgres:
+    openfligths_airlines:
+      #    +header: false
+    openfligths_airports:
+      #    +header: false
+    openfligths_routes:
+      #    +header: false
+    ourairports_airports:
+    ourairports_countries:
+    ourairports_runways:
+    statsbase_fleet_average_age_by_company:
+    statsbase_fleet_average_age_by_country:
+
+models:
+  airlines_dbt_postgres:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: int
+      +materialized: table
+    mart:
+      +schema: dwh
+      +materialized: incremental

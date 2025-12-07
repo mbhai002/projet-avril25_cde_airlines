@@ -25,4 +25,7 @@ docker-compose down -v
 docker-compose up -d
 
 #lancer les services en arrière-plan mais suivre les logs
+#Powershell
+docker-compose up -d ; docker-compose logs -f flight-collector
+#CMD
 docker-compose up -d && docker-compose logs -f flight-collector
