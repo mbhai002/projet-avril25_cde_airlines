@@ -19,6 +19,9 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+-- Extension pg_trgm pour les fonctions de similarité
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;

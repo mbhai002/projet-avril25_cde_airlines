@@ -97,6 +97,43 @@ services:
     depends_on:
       - postgresql
 
+  # Service DBT Prepare
+  dbt_prepare:
+    build: ./airlines-dbt-postgres/dbt_prepare
+    container_name: airlines_dbt_prepare
+    env_file:
+      - .env
+    volumes:
+      - ${DBT_SOURCE_DIR}:/seed_source 
+      - ${DBT_TARGET_DIR}:/seeds
+      - ./airlines-dbt-postgres/dbt_prepare:/app
+    environment:
+      SOURCE_DIR: /seed_source
+      TARGET_DIR: /seeds
+    networks:
+      - airlines_network
+
+  # Service DBT
+  dbt:
+    build: ./airlines-dbt-postgres/dbt
+    container_name: airlines_dbt
+    env_file:
+      - .env
+    entrypoint: ["/bin/bash", "/app/entrypoint.sh"]
+    volumes:
+      - ./airlines-dbt-postgres/dbt:/app
+    environment:
+      DBT_HOST: airlines_postgresql
+      DBT_PORT: 5432
+      DBT_USER: postgres
+      DBT_PASSWORD: postgres
+      DBT_DBNAME: airlines_db
+    networks:
+      - airlines_network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
 volumes:
   postgresql_data:
     driver: local
