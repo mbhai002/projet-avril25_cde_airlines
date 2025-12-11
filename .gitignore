@@ -1,0 +1,63 @@
+# Environnements virtuels Python
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Variables d'environnement (secrets)
+.env
+.env.aws
+
+# Fichiers Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Données locales
+data/__pycache__/
+data/metar/*.xml
+data/taf/*.xml
+*.log
+logs/
+*.jsonl
+
+# MongoDB dumps
+*.bson
+dumps/
+data/__pycache__/flight_data_scrapper.cpython-311.pyc
+
+
+#DBT
+/airlines-dbt-postgres/data/
+# Fichiers CSV (sauf statsbase)
+/airlines-dbt-postgres/dbt/seeds/*.csv
+!/airlines-dbt-postgres/dbt/seeds/statsbase*.csv

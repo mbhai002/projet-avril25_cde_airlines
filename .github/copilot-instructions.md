@@ -1,0 +1,2 @@
+- Applique toujours les principes DRY, KISS et YAGNI
+- N'ajoute pas de commentaires inutiles et ne mets pas de caractères du type icône comme 📋 dans les commentaires. Les accents sont autorisés.

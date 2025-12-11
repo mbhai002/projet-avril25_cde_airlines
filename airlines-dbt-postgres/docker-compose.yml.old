@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres_dev
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT}:${DBT_PORT_CONTAINER}" # map host:container
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      - dbt-net
+
+  dbt:
+    build: ./dbt
+    container_name: dbt_dev
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app
+    environment:
+      DBT_HOST: postgres
+      DBT_PORT: ${DBT_PORT_CONTAINER} # port interne du container
+      DBT_USER: ${POSTGRES_USER}
+      DBT_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_DBNAME: ${POSTGRES_DB}
+    networks:
+      - dbt-net
+    command: sleep infinity  # container dbt en mode interactif
+
+  cleanup_airlines:
+    build: ./dbt_cleanup
+    container_name: cleanup_airlines
+    command: ["python3", "/app/cleanup_dups_airlines.py"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: ${DBT_PORT_CONTAINER}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      API_NINJAS_KEY: ${API_NINJAS_KEY}
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+
+networks:
+  dbt-net:

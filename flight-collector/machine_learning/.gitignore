@@ -1,0 +1,27 @@
+# Configuration locale (contient les mots de passe)
+config_test_local.py
+
+# Fichiers temporaires
+temp_flights.csv
+*.tmp
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: dim_countries
+    description: "Dimension des pays et régions des aéroports + âge moyen de la flotte locale"
+    columns:
+      - name: code
+        tests: 
+          - unique
+          - not_null
+
+  - name: dim_airlines
+    description: "Dimension des compagnies aériennes + âge moyen de la flotte"
+    columns:
+      - name: id
+        tests: 
+          - not_null
+          - unique
+      - name: iata
+        tests: 
+          - not_null
+          - unique
+      - name: country_code
+        tests:
+          - relationships:
+              to: ref('dim_countries')
+              field: code
+      - name: active
+        tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+  - name: dim_airports
+    description: "Dimension des aéroports"
+    columns:
+      - name: id
+        tests: 
+          - not_null
+      - name: iata_code
+        tests: 
+          - unique
+      - name: iso_country
+        tests:
+          - relationships:
+              to: ref('dim_countries')
+              field: code
+
+  - name: dim_routes
+    description: "Dimension des routes commerciales"
+    columns:
+      - name: airline_iata
+        tests:
+          - not_null
+      - name: source_airport_iata
+        tests:
+          - not_null
+      - name: dest_airport_iata
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - airline_iata
+            - source_airport_iata
+            - dest_airport_iata
+
+  - name: dim_runways
+    description: "Dimension des pistes d'aéroports"
+    columns:
+      - name: id
+        tests:
+          - not_null
+      - name: airport_ref
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_airports')
+              field: id

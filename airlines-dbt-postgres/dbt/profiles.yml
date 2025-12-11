@@ -1,0 +1,13 @@
+airlines_profile:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      port: "{{ env_var('DBT_PORT') | int }}" # port interne du container pour la connexion postgresql
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      schema: public
+      threads: 1
+
