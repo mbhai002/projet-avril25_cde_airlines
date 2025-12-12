@@ -34,9 +34,9 @@ DST Airlines is a comprehensive flight delay prediction system that:
 | **Flight Collector** | Automated data collection service | Background service (no UI) |
 | **PostgreSQL** | Main relational database | Port 5432 (database clients) |
 | **MongoDB** | NoSQL database for raw data | Port 27017 (database clients) |
-| **FastAPI** | REST API for data access | http://13.37.217.206:8000 |
-| **Dash Dashboard** | Interactive web visualization | http://13.37.217.206:8050 |
-| **pgAdmin** | Database management interface | http://13.37.217.206:5050 |
+| **FastAPI** | REST API for data access | http://35.181.7.121:8000 |
+| **Dash Dashboard** | Interactive web visualization | http://35.181.7.121:8050 |
+| **pgAdmin** | Database management interface | http://35.181.7.121:5050 |
 
 ### System Capabilities
 
@@ -66,24 +66,24 @@ DST Airlines is a comprehensive flight delay prediction system that:
 
 ### Service URLs
 
-**All services are accessible via the public IP: 13.37.217.206**
+**All services are accessible via the public IP: 35.181.7.121**
 
 #### 1. Interactive Dashboard (Primary User Interface)
 ```
-URL: http://13.37.217.206:8050
+URL: http://35.181.7.121:8050
 Access: Public (no login required)
 ```
 
 #### 2. REST API & Documentation
 ```
-URL: http://13.37.217.206:8000
-API Docs: http://13.37.217.206:8000/docs
+URL: http://35.181.7.121:8000
+API Docs: http://35.181.7.121:8000/docs
 Access: Public (no authentication)
 ```
 
 #### 3. Database Administration (pgAdmin)
 ```
-URL: http://13.37.217.206:5050
+URL: http://35.181.7.121:5050
 Login: admin@admin.com
 Password: admin
 Access: Web-based login required
@@ -113,7 +113,7 @@ Access: Web-based login required
 
 ### Accessing the Dashboard
 
-**URL:** http://13.37.217.206:8050
+**URL:** http://35.181.7.121:8050
 
 The dashboard has three main pages accessible via the top navigation bar:
 
@@ -351,12 +351,12 @@ The dashboard has three main pages accessible via the top navigation bar:
 
 **Interactive API Docs (Swagger UI):**
 ```
-URL: http://13.37.217.206:8000/docs
+URL: http://35.181.7.121:8000/docs
 ```
 
 **Alternative (ReDoc):**
 ```
-URL: http://13.37.217.206:8000/redoc
+URL: http://35.181.7.121:8000/redoc
 ```
 
 ### Available Endpoints
@@ -391,7 +391,7 @@ GET /search-flights
 
 **Example Request:**
 ```
-http://13.37.217.206:8000/search-flights?flight_number=AF&limit=10
+http://35.181.7.121:8000/search-flights?flight_number=AF&limit=10
 ```
 
 **Response:**
@@ -567,20 +567,20 @@ GET /meteo/top-airports?limit=20
 
 Just paste URL in browser:
 ```
-http://13.37.217.206:8000/stats
+http://35.181.7.121:8000/stats
 ```
 
 #### Command Line (curl)
 
 ```bash
 # Get global statistics
-curl http://13.37.217.206:8000/stats
+curl http://35.181.7.121:8000/stats
 
 # Search flights
-curl "http://13.37.217.206:8000/search-flights?flight_number=AF&limit=10"
+curl "http://35.181.7.121:8000/search-flights?flight_number=AF&limit=10"
 
 # Get daily stats with custom threshold
-curl "http://13.37.217.206:8000/stats/daily?delay_threshold=15"
+curl "http://35.181.7.121:8000/stats/daily?delay_threshold=15"
 ```
 
 #### Python (requests library)
@@ -589,7 +589,7 @@ curl "http://13.37.217.206:8000/stats/daily?delay_threshold=15"
 import requests
 
 # Base URL
-BASE_URL = "http://13.37.217.206:8000"
+BASE_URL = "http://35.181.7.121:8000"
 
 # Get statistics
 response = requests.get(f"{BASE_URL}/stats")
@@ -612,7 +612,7 @@ for flight in flights:
 
 ```javascript
 // Get statistics
-fetch('http://13.37.217.206:8000/stats')
+fetch('http://35.181.7.121:8000/stats')
   .then(response => response.json())
   .then(data => {
     console.log('Total flights:', data.total_flights);
@@ -624,7 +624,7 @@ const params = new URLSearchParams({
   flight_number: 'AF',
   limit: 10
 });
-fetch(`http://13.37.217.206:8000/search-flights?${params}`)
+fetch(`http://35.181.7.121:8000/search-flights?${params}`)
   .then(response => response.json())
   .then(flights => {
     flights.forEach(flight => {
@@ -639,7 +639,7 @@ fetch(`http://13.37.217.206:8000/search-flights?${params}`)
 
 ### Accessing pgAdmin
 
-**URL:** http://13.37.217.206:5050
+**URL:** http://35.181.7.121:5050
 
 **Login Credentials:**
 - Email: `admin@admin.com`
@@ -852,7 +852,7 @@ docker exec airlines_postgresql pg_dump -U postgres -d airlines_db -t flight --d
 **View real-time logs:**
 ```bash
 # SSH into EC2
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 
 # Navigate to project
 cd projet-avril25_cde_airlines-dockerisation
@@ -887,7 +887,7 @@ ERROR: Timeout collecting airport XXXX
 **Force immediate collection:**
 ```bash
 # SSH into EC2
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 
 cd projet-avril25_cde_airlines-dockerisation
 
@@ -1022,7 +1022,7 @@ WHERE issue_time < NOW() - INTERVAL '7 days';
 ### Task 1: Search for a Specific Flight
 
 **Via Dashboard:**
-1. Go to http://13.37.217.206:8050
+1. Go to http://35.181.7.121:8050
 2. Click **Vols** tab
 3. Enter flight number in search box
 4. Optionally add date filter
@@ -1031,14 +1031,14 @@ WHERE issue_time < NOW() - INTERVAL '7 days';
 
 **Via API:**
 ```bash
-curl "http://13.37.217.206:8000/search-flights?flight_number=AF1234&departure_date=2025-12-11"
+curl "http://35.181.7.121:8000/search-flights?flight_number=AF1234&departure_date=2025-12-11"
 ```
 
 ### Task 2: Check System Status
 
 **SSH into server:**
 ```bash
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 cd projet-avril25_cde_airlines-dockerisation
 docker-compose ps
 ```
@@ -1049,7 +1049,7 @@ docker-compose ps
 
 ```bash
 # SSH into server
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 cd projet-avril25_cde_airlines-dockerisation
 docker-compose logs --tail=100 flight-collector
 ```
@@ -1057,7 +1057,7 @@ docker-compose logs --tail=100 flight-collector
 ### Task 4: Export Flight Data
 
 **Via pgAdmin:**
-1. Login to http://13.37.217.206:5050
+1. Login to http://35.181.7.121:5050
 2. Navigate to Airlines PostgreSQL → airlines_db → Schemas → public → Tables → flight
 3. Right-click → **Import/Export Data**
 4. Select **Export**
@@ -1067,14 +1067,14 @@ docker-compose logs --tail=100 flight-collector
 **Via API:**
 ```bash
 # Get all flights from today
-curl "http://13.37.217.206:8000/search-flights?departure_date=2025-12-11&limit=10000" > flights_today.json
+curl "http://35.181.7.121:8000/search-flights?departure_date=2025-12-11&limit=10000" > flights_today.json
 ```
 
 ### Task 5: Restart a Service
 
 ```bash
 # SSH into server
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 cd projet-avril25_cde_airlines-dockerisation
 
 # Restart specific service
@@ -1103,22 +1103,22 @@ docker exec airlines_postgresql psql -U postgres -d airlines_db -c "SELECT pg_si
 ### Task 7: View ML Model Performance
 
 **Via Dashboard:**
-1. Go to http://13.37.217.206:8050
+1. Go to http://35.181.7.121:8050
 2. Click **Analyses** tab
 3. Scroll to "ML Model Performance" section
 4. View confusion matrix and accuracy
 
 **Via API:**
 ```bash
-curl http://13.37.217.206:8000/ml/confusion
-curl http://13.37.217.206:8000/ml/risk-distribution
+curl http://35.181.7.121:8000/ml/confusion
+curl http://35.181.7.121:8000/ml/risk-distribution
 ```
 
 ### Task 8: Update Configuration
 
 ```bash
 # SSH into server
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 cd projet-avril25_cde_airlines-dockerisation
 
 # Edit .env file
@@ -1135,20 +1135,20 @@ docker-compose restart flight-collector
 
 ```bash
 # SSH into server
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 
 # Backup PostgreSQL
 docker exec airlines_postgresql pg_dump -U postgres airlines_db > ~/backup_$(date +%Y%m%d).sql
 
 # Download to local machine (run from local PowerShell)
-scp -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206:~/backup_*.sql ./
+scp -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121:~/backup_*.sql ./
 ```
 
 ### Task 10: Check Disk Space
 
 ```bash
 # SSH into server
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 
 # Check overall disk usage
 df -h
@@ -1295,7 +1295,7 @@ A: Docker container logs. View with `docker-compose logs`
 
 **API Documentation:**
 - FastAPI: https://fastapi.tiangolo.com/
-- Interactive Docs: http://13.37.217.206:8000/docs
+- Interactive Docs: http://35.181.7.121:8000/docs
 
 ### Support Contacts
 
@@ -1320,7 +1320,7 @@ A: Docker container logs. View with `docker-compose logs`
 
 **SSH Connection:**
 ```bash
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 ```
 
 **Navigate to Project:**
@@ -1366,9 +1366,9 @@ docker-compose up -d
 | 22 | SSH | Terminal only |
 | 5432 | PostgreSQL | Database clients |
 | 27017 | MongoDB | Database clients |
-| 5050 | pgAdmin | http://13.37.217.206:5050 |
-| 8000 | FastAPI | http://13.37.217.206:8000 |
-| 8050 | Dash | http://13.37.217.206:8050 |
+| 5050 | pgAdmin | http://35.181.7.121:5050 |
+| 8000 | FastAPI | http://35.181.7.121:8000 |
+| 8050 | Dash | http://35.181.7.121:8050 |
 
 ### Airport Codes Reference
 
@@ -1409,4 +1409,4 @@ docker-compose up -d
 *Document Version: 1.0*
 *Last Updated: December 11, 2025*
 *System Deployed: December 11, 2025*
-*Public IP: 13.37.217.206*
+*Public IP: 35.181.7.121*

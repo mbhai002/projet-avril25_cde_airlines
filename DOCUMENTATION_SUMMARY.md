@@ -3,13 +3,13 @@
 ## Quick Access Links
 
 **Live System URLs:**
-- **Dashboard:** http://13.37.217.206:8050
-- **API Documentation:** http://13.37.217.206:8000/docs
-- **Database Admin (pgAdmin):** http://13.37.217.206:5050
+- **Dashboard:** http://35.181.7.121:8050
+- **API Documentation:** http://35.181.7.121:8000/docs
+- **Database Admin (pgAdmin):** http://35.181.7.121:5050
 
 **EC2 Instance:**
-- **IP Address:** 13.37.217.206
-- **SSH:** `ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206`
+- **IP Address:** 35.181.7.121
+- **SSH:** `ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121`
 
 ---
 
@@ -172,13 +172,13 @@ pandoc USER_GUIDE.md -o USER_GUIDE.pdf --pdf-engine=wkhtmltopdf
 
 ### For End Users (Using the System):
 1. Read: `USER_GUIDE.md`
-2. Access dashboard: http://13.37.217.206:8050
+2. Access dashboard: http://35.181.7.121:8050
 3. Explore the three main pages (Vols, Meteo, Analyses)
 4. Use API for programmatic access
 
 ### For Data Scientists:
 1. Read: `USER_GUIDE.md` (API and ML sections)
-2. Access API docs: http://13.37.217.206:8000/docs
+2. Access API docs: http://35.181.7.121:8000/docs
 3. Connect to database via pgAdmin
 4. Export data for analysis
 
@@ -188,7 +188,7 @@ pandoc USER_GUIDE.md -o USER_GUIDE.pdf --pdf-engine=wkhtmltopdf
 
 **Verify all services are running:**
 ```bash
-ssh -i ~/Downloads/airlines-key.pem ubuntu@13.37.217.206
+ssh -i ~/Downloads/airlines-key-v2.pem ubuntu@35.181.7.121
 cd projet-avril25_cde_airlines-dockerisation
 docker-compose ps
 ```
@@ -209,24 +209,24 @@ airlines_postgresql   Up (healthy)
 ## Important Credentials
 
 **EC2 SSH:**
-- Key File: `airlines-key.pem` (in Downloads folder)
+- Key File: `airlines-key-v2.pem` (in Downloads folder)
 - Username: `ubuntu`
-- Host: `13.37.217.206`
+- Host: `35.181.7.121`
 
 **pgAdmin:**
-- URL: http://13.37.217.206:5050
+- URL: http://35.181.7.121:5050
 - Email: `admin@admin.com`
 - Password: `admin`
 
 **PostgreSQL Database:**
-- Host: `airlines_postgresql` (internal) or `13.37.217.206` (external)
+- Host: `airlines_postgresql` (internal) or `35.181.7.121` (external)
 - Port: `5432`
 - Database: `airlines_db`
 - Username: `postgres`
 - Password: `postgres`
 
 **MongoDB:**
-- Host: `mongodb` (internal) or `13.37.217.206` (external)
+- Host: `mongodb` (internal) or `35.181.7.121` (external)
 - Port: `27017`
 - Username: `admin`
 - Password: `admin123`
@@ -253,7 +253,7 @@ airlines_postgresql   Up (healthy)
 ### Long Term (This Month):
 - Review AWS costs
 - Optimize performance if needed
-- Consider upgrading instance if t2.micro is insufficient
+- Consider upgrading instance if c7i-flex.large is insufficient
 - Implement additional security measures
 - Set up monitoring and alerts
 
@@ -280,9 +280,9 @@ airlines_postgresql   Up (healthy)
 
 ## Project Information
 
-**Deployment Date:** December 11, 2025
+**Deployment Date:** December 12, 2025
 **AWS Region:** eu-west-3 (Paris)
-**Instance Type:** t2.micro (Free Tier)
+**Instance Type:** c7i-flex.large (Free Tier)
 **System Components:**
 - PostgreSQL 17.4
 - MongoDB 7.0
@@ -311,15 +311,15 @@ airlines_postgresql   Up (healthy)
 - FastAPI Docs: https://fastapi.tiangolo.com/
 
 **Project Resources:**
-- Dashboard: http://13.37.217.206:8050
-- API Docs: http://13.37.217.206:8000/docs
-- pgAdmin: http://13.37.217.206:5050
+- Dashboard: http://35.181.7.121:8050
+- API Docs: http://35.181.7.121:8000/docs
+- pgAdmin: http://35.181.7.121:5050
 
 ---
 
 *Documentation Package Version: 1.0*
-*Created: December 11, 2025*
-*Last Updated: December 11, 2025*
+*Created: December 12, 2025*
+*Last Updated: December 12, 2025*
 
 ---
 

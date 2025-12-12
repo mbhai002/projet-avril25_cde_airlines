@@ -20,7 +20,7 @@
 ### EC2 Instance Details
 
 **Instance Information:**
-- **Instance Type:** t2.micro (Free Tier)
+- **Instance Type:** c7i-flex.large (Free Tier)
 - **vCPU:** 1
 - **Memory:** 1 GiB
 - **Storage:** 25 GB gp3 (Free Tier eligible up to 30GB)
@@ -28,8 +28,8 @@
 - **Region:** eu-west-3 (Paris)
 
 **Instance Identifiers:**
-- **Public IPv4 Address:** 13.37.217.206
-- **Public IPv4 DNS:** ec2-13-37-217-206.eu-west-3.compute.amazonaws.com
+- **Public IPv4 Address:** 35.181.7.121
+- **Public IPv4 DNS:** ec2-35-181-7-121.eu-west-3.compute.amazonaws.com
 - **Instance Name:** airlines-app-server (or your chosen name)
 
 **SSH Key Pair:**
@@ -50,7 +50,7 @@
    - Free tier eligible
 
 2. **Instance Type:**
-   - t2.micro (1 vCPU, 1 GiB RAM)
+   - c7i-flex.large (1 vCPU, 1 GiB RAM)
    - Note: For production with heavy load, consider t3.small or larger
 
 3. **Network Settings:**
@@ -352,7 +352,7 @@ SOURCE=airportinfo.live
 - Password: admin
 
 **Manual Database Connection Setup:**
-1. Open http://13.37.217.206:5050
+1. Open http://35.181.7.121:5050
 2. Login with credentials above
 3. Right-click "Servers" → Register → Server
 4. General tab:
@@ -496,7 +496,7 @@ docker exec -it airlines_postgresql psql -U postgres -d airlines_db
 
 #### 3. Out of Memory Errors
 
-**t2.micro has only 1GB RAM - may be insufficient**
+**c7i-flex.large has only 1GB RAM - may be insufficient**
 
 **Check memory usage:**
 ```bash
@@ -622,7 +622,7 @@ docker-compose up -d
 **Update application code:**
 ```bash
 # On local machine
-scp -i ~/Downloads/airlines-key.pem -r ./projet-avril25_cde_airlines-dockerisation ubuntu@13.37.217.206:~/
+scp -i ~/Downloads/airlines-key-v2.pem -r ./projet-avril25_cde_airlines-dockerisation ubuntu@35.181.7.121:~/
 
 # On EC2
 cd projet-avril25_cde_airlines-dockerisation
@@ -686,7 +686,7 @@ sudo apt-get upgrade
 
 ### Free Tier Limits
 
-- **EC2 t2.micro:** 750 hours/month (1 instance running 24/7)
+- **EC2 c7i-flex.large:** 750 hours/month (1 instance running 24/7)
 - **EBS Storage:** 30 GB/month
 - **Data Transfer:** 15 GB outbound/month
 - **Exceeding limits will incur charges**
@@ -695,7 +695,7 @@ sudo apt-get upgrade
 
 | Resource | Cost/Month |
 |----------|------------|
-| t2.micro EC2 (24/7) | $0 (Free tier) or ~$8.50 |
+| c7i-flex.large EC2 (24/7) | $0 (Free tier) or ~$8.50 |
 | t3.small EC2 (24/7) | ~$15 |
 | 25 GB EBS gp3 | $2 |
 | Data Transfer (100GB) | $9 |
@@ -734,5 +734,5 @@ aws ec2 stop-instances --instance-ids i-xxxxx
 ---
 
 *Document Version: 1.0*
-*Last Updated: December 11, 2025*
-*Deployment Date: December 11, 2025*
+*Last Updated: December 12, 2025*
+*Deployment Date: December 12, 2025*
