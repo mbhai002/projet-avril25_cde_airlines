@@ -23,7 +23,7 @@ RUN dos2unix /app/alim_airlines_dims.sh \
 # rendre executables
 RUN chmod +x /app/fleet_average_age.py \
     && chmod +x /app/cleanup_iata_dups.py \
-    && chmod +x /app/alim_airlines_dims.sh \ 
+    && chmod +x /app/alim_airlines_dims.sh \
     && chmod +x /app/fix_headers.sh \
     && chmod +x /app/run_seed_prepare.sh
 

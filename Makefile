@@ -85,7 +85,11 @@ all:
 	@$(MAKE) up
 	@echo ""
 	@echo "=== Attente du démarrage de PostgreSQL ==="
-	@timeout /t 20 /nobreak > nul
+	@until docker exec airlines_postgresql pg_isready -U postgres >/dev/null 2>&1; do \
+		echo "PostgreSQL n'est pas encore prêt... attente..."; \
+		sleep 2; \
+	done
+	@echo "PostgreSQL est prêt !"
 	@echo ""
 	@echo "=== Pipeline DBT ==="
 	@$(MAKE) dbt-all
