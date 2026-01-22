@@ -85,9 +85,9 @@ all:
 	@$(MAKE) up
 	@echo ""
 	@echo "=== Attente du démarrage de PostgreSQL ==="
-	@until docker exec airlines_postgresql pg_isready -U postgres >/dev/null 2>&1; do \
-		echo "PostgreSQL n'est pas encore prêt... attente..."; \
-		sleep 2; \
+	@until docker exec airlines_postgresql pg_isready -h localhost -U postgres >/dev/null 2>&1; do \
+		echo "PostgreSQL n'est pas encore prêt (initialisation en cours)..."; \
+		sleep 5; \
 	done
 	@echo "PostgreSQL est prêt !"
 	@echo ""

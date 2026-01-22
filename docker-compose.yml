@@ -3,26 +3,34 @@ version: '3.8'
 services:
   # Service PostgreSQL
   postgresql:
-    image: postgres:17.4
+    build:
+      context: ./database
+      dockerfile: Dockerfile
     container_name: airlines_postgresql
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: airlines_db
+      # Variables pour l'import FTP (récupérées du .env)
+      FTP_HOST: ${FTP_HOST}
+      FTP_USER: ${FTP_USERNAME}
+      FTP_PASS: ${FTP_PASSWORD}
+      FTP_DIR: ${FTP_BACKUP_DIR:-/backup}
     ports:
       - "5432:5432"
     volumes:
-      # Montage du fichier SQL pour initialisation automatique
-      - ./flight-collector/utils/dst_postgresql.sql:/docker-entrypoint-initdb.d/01_init.sql
+      # Montage des scripts d'initialisation (ordre alphabétique)
+      - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/02_import_ftp.sh:/docker-entrypoint-initdb.d/02_import_ftp.sh
       # Volume persistant pour les données
       - postgresql_data:/var/lib/postgresql/data
     networks:
       - airlines_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 30
 
   # Service MongoDB
   mongodb:

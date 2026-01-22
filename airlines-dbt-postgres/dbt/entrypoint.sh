@@ -7,7 +7,7 @@ export PGUSER="${DBT_USER:-postgres}"
 
 echo "Waiting for PostgreSQL..."
 
-n_max=30
+n_max=150
 nb_iter=0
 until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
       sleep 2
