@@ -16,7 +16,7 @@ WITH source AS (
     LEFT JOIN {{ ref('dim_countries') }} c
       ON a.country_name = c.country_name
     LEFT JOIN {{ ref('fleet_age_by_company') }} fa
-      ON UPPER(fa.Brand) = UPPER(a.name)
+      ON UPPER(fa."Brand") = UPPER(a.name)
     WHERE (LENGTH(a.iata) = 2 OR LENGTH(a.icao) = 3)
 )
 

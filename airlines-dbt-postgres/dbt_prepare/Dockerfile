@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # copie du Python + scripts shell
 COPY fleet_average_age.py .
 COPY cleanup_iata_dups.py .
+COPY fast_load_seeds.py .
 COPY alim_airlines_dims.sh . 
 COPY fix_headers.sh .
 COPY run_seed_prepare.sh .
@@ -23,6 +24,7 @@ RUN dos2unix /app/alim_airlines_dims.sh \
 # rendre executables
 RUN chmod +x /app/fleet_average_age.py \
     && chmod +x /app/cleanup_iata_dups.py \
+    && chmod +x /app/fast_load_seeds.py \
     && chmod +x /app/alim_airlines_dims.sh \
     && chmod +x /app/fix_headers.sh \
     && chmod +x /app/run_seed_prepare.sh

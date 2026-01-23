@@ -119,6 +119,11 @@ services:
     environment:
       SOURCE_DIR: /seed_source
       TARGET_DIR: /seeds
+      DBT_HOST: airlines_postgresql
+      DBT_PORT: 5432
+      DBT_USER: postgres
+      DBT_PASSWORD: postgres
+      DBT_DBNAME: airlines_db
     networks:
       - airlines_network
 
@@ -189,8 +194,7 @@ services:
     container_name: airlines_airflow
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgresql:5432/airlines_db
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA=airflow
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgresql:5432/airlines_db?options=-csearch_path%3Dairflow
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
       - PYTHONWARNINGS=ignore:logging_level option,ignore:in-memory storage

@@ -51,8 +51,8 @@ dbt-prepare:
 	@echo "Préparation terminée!"
 
 dbt-seed:
-	@echo "Chargement des seeds DBT..."
-	docker compose run --rm dbt seed --profiles-dir /app --full-refresh
+	@echo "Chargement rapide des seeds (Python/COPY)..."
+	docker compose run --rm dbt_prepare python /app/fast_load_seeds.py
 	@echo "Seeds chargés!"
 
 dbt-run:
@@ -94,11 +94,12 @@ all:
 	@echo "PostgreSQL est prêt !"
 	@echo ""
 	@echo "=== Configuration Airflow ==="
-	@echo "Attente d'Airflow (initialisation base de données)..."
-	@until docker exec airlines_airflow airflow db check >/dev/null 2>&1; do \
-		echo "Airflow : initialisation de la base en cours..."; \
+	@echo "Initialisation de la base de données Airflow (Schéma: airflow)..."
+	@until docker exec airlines_airflow airflow db init >/dev/null 2>&1; do \
+		echo "Airflow : en attente de l'initialisation de la base..."; \
 		sleep 5; \
 	done
+	@echo "Base de données Airflow initialisée."
 	@echo "Attente de la création de l'utilisateur par Airflow standalone..."
 	@until docker exec airlines_airflow airflow users list 2>/dev/null | grep admin >/dev/null 2>&1; do \
 		echo "Airflow : création de l'utilisateur admin en cours..."; \
