@@ -48,13 +48,8 @@ class CollectionConfig:
     past_hour_offset: int = int(os.getenv("PAST_HOUR_OFFSET", "-20"))
     
     # Comportement d'exécution
-    run_once: bool = str_to_bool(os.getenv("RUN_ONCE", "true"))
     collect_realtime: bool = str_to_bool(os.getenv("COLLECT_REALTIME", "true"))
     collect_past: bool = str_to_bool(os.getenv("COLLECT_PAST", "false"))
-    
-    # Scheduling pour les boucles (si run_once = False)
-    schedule_minute: int = int(os.getenv("SCHEDULE_MINUTE", "5"))
-    loop_interval_minutes: int = int(os.getenv("LOOP_INTERVAL_MINUTES", "60"))
     
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

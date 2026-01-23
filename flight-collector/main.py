@@ -23,16 +23,9 @@ def main():
     try:
         config = get_default_config()
         
-        print("\nConfiguration chargée depuis .env :")
-        print(f"  - Run once: {config.run_once}")
-        print(f"  - Collect realtime: {config.collect_realtime}")
-        print(f"  - Collect past: {config.collect_past}")
-        if not config.run_once:
-            print(f"  - Schedule: XX:{config.schedule_minute:02d} toutes les {config.loop_interval_minutes} minutes")
-        print(f"  - Database: {config.database_name}")
-        print(f"  - Airports: {config.num_airports}")
-        print(f"  - Weather: {config.enable_weather}")
-        print("")
+        # L'orchestration est maintenant gérée par Airflow
+        print("\nNote: L'orchestration est gérée par Airflow.")
+        print("Lancement d'une collecte unique...\n")
         
         manager = ExecutionManager(config)
         manager.run()

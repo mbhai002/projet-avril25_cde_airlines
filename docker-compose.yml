@@ -20,6 +20,7 @@ services:
       - "5432:5432"
     volumes:
       # Montage des scripts d'initialisation (ordre alphabétique)
+      - ./database/00_init_airflow.sql:/docker-entrypoint-initdb.d/00_init_airflow.sql
       - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
       - ./database/02_import_ftp.sh:/docker-entrypoint-initdb.d/02_import_ftp.sh
       # Volume persistant pour les données
@@ -54,35 +55,35 @@ services:
       timeout: 5s
       retries: 5
 
-  # Service Application Python
-  flight-collector:
-    build:
-      context: ./flight-collector
-      dockerfile: Dockerfile
-    container_name: airlines_app
-    env_file:
-      - .env
-    environment:
-      - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
-      - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
-    volumes:
-      # Montage du code source pour le développement
-      - ./flight-collector/config:/app/config
-      - ./flight-collector/data:/app/data
-      - ./flight-collector/orchestration:/app/orchestration
-      - ./flight-collector/utils:/app/utils
-      - ./flight-collector/machine_learning:/app/machine_learning
-      - ./flight-collector/main.py:/app/main.py
-      # Volumes pour les données persistantes
-      - ./flight-collector/logs:/app/logs
-    networks:
-      - airlines_network
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-    restart: unless-stopped
+  # Service Application Python (Déplacé dans Airflow)
+  # flight-collector:
+  #   build:
+  #     context: ./flight-collector
+  #     dockerfile: Dockerfile
+  #   container_name: airlines_app
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
+  #     - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
+  #   volumes:
+  #     # Montage du code source pour le développement
+  #     - ./flight-collector/config:/app/config
+  #     - ./flight-collector/data:/app/data
+  #     - ./flight-collector/orchestration:/app/orchestration
+  #     - ./flight-collector/utils:/app/utils
+  #     - ./flight-collector/machine_learning:/app/machine_learning
+  #     - ./flight-collector/main.py:/app/main.py
+  #     # Volumes pour les données persistantes
+  #     - ./flight-collector/logs:/app/logs
+  #   networks:
+  #     - airlines_network
+  #   depends_on:
+  #     postgresql:
+  #       condition: service_healthy
+  #     mongodb:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
   # Service pgAdmin
   pgadmin:
@@ -189,6 +190,7 @@ services:
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgresql:5432/airlines_db
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA=airflow
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
       - PYTHONWARNINGS=ignore:logging_level option,ignore:in-memory storage

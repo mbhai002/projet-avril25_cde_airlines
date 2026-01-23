@@ -38,40 +38,9 @@ class ExecutionManager:
         self.logger.info("ExecutionManager initialized")
     
     def run(self):
-        """Point d'entrée principal pour l'exécution selon la configuration"""
-        if self.config.run_once:
-            self._run_single()
-        else:
-            self._run_loop()
-    
-    def _run_single(self):
-        """Exécute une collecte unique complète"""
-        print("=== COLLECTE UNIQUE - Workflow complet ===")
+        """Point d'entrée principal pour l'exécution"""
+        print("=== COLLECTE - Workflow complet ===")
         self._execute_complete_workflow()
-    
-    def _run_loop(self):
-        """Exécute en boucle le workflow complet"""
-        print("=== MODE BOUCLE - Collecte complète ===")
-        print(f"Exécution toutes les {self.config.loop_interval_minutes} minutes à XX:{self.config.schedule_minute:02d}")
-        print("Collecte les vols temps réel ET les vols passés à chaque exécution")
-        print("Appuyez sur Ctrl+C pour arrêter\n")
-        
-        try:
-            while True:
-                # Calculer la prochaine exécution
-                next_run = self._calculate_next_run(self.config.schedule_minute, self.config.loop_interval_minutes)
-                wait_seconds = (next_run - datetime.now()).total_seconds()
-                
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Prochaine exécution prévue à {next_run.strftime('%H:%M:%S')}")
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Attente de {wait_seconds/60:.1f} minutes...")
-                time.sleep(wait_seconds)
-                
-                # Exécuter le workflow complet
-                self._execute_complete_workflow()
-                
-        except KeyboardInterrupt:
-            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Arrêt demandé par l'utilisateur")
-            print("Collecteur arrêté.")
     
     def _execute_complete_workflow(self):
         """Exécute une collecte combinée - LES 8 ÉTAPES AVEC SESSION_ID GLOBAL"""
@@ -217,22 +186,3 @@ class ExecutionManager:
         
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Collecte complète terminée avec {status} ({duration:.1f}s)")
         print("=" * 80 + "\n")
-    
-    def _calculate_next_run(self, target_minute: int, interval_minutes: int) -> datetime:
-        """
-        Calcule la prochaine heure d'exécution
-        
-        Args:
-            target_minute: Minute cible (ex: 5 pour XX:05)
-            interval_minutes: Intervalle en minutes
-            
-        Returns:
-            Prochaine heure d'exécution
-        """
-        now = datetime.now()
-        next_run = now.replace(minute=target_minute, second=0, microsecond=0)
-        
-        if next_run <= now:
-            next_run += timedelta(minutes=interval_minutes)
-        
-        return next_run
