@@ -180,6 +180,43 @@ services:
       - fastapi
     restart: unless-stopped
 
+  # Service Airflow (Scheduler + Webserver)
+  airflow:
+    build:
+      context: .
+      dockerfile: ./airflow/Dockerfile.airflow
+    container_name: airlines_airflow
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgresql:5432/airlines_db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - PYTHONWARNINGS=ignore:logging_level option,ignore:in-memory storage
+      - PYTHONPATH=/opt/airflow/flight-collector
+      - AIRFLOW_UID=1000
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
+      - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
+    env_file:
+      - .env
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./flight-collector:/opt/airflow/flight-collector
+      - airflow_data:/opt/airflow
+    ports:
+      - "8081:8080"
+    command: standalone
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - airlines_network
+    user: "1000:0"
+
 volumes:
   postgresql_data:
     driver: local
@@ -188,6 +225,8 @@ volumes:
   mongodb_config:
     driver: local
   pgadmin_data:
+    driver: local
+  airflow_data:
     driver: local
 
 networks:

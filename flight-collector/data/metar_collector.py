@@ -251,7 +251,7 @@ class MetarCollector:
             self.logger.info(f"Lecture du fichier METAR XML: {os.path.basename(xml_filepath)}")
             
             # Lire et parser le fichier XML avec xmltodict
-            with open(xml_filepath, 'r', encoding='utf-8') as xml_file:
+            with open(xml_filepath, 'r', encoding='utf-8-sig') as xml_file:
                 xml_content = xml_file.read()
             
             # Convertir XML en dictionnaire Python

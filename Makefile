@@ -25,6 +25,8 @@ build:
 
 up:
 	@echo "Démarrage de tous les services..."
+	@mkdir -p flight-collector/data/metar flight-collector/data/taf flight-collector/logs
+	@chmod -R 775 flight-collector/data flight-collector/logs 2>/dev/null || true
 	docker compose up -d
 	@echo "Services démarrés!"
 
@@ -90,6 +92,25 @@ all:
 		sleep 5; \
 	done
 	@echo "PostgreSQL est prêt !"
+	@echo ""
+	@echo "=== Configuration Airflow ==="
+	@echo "Attente d'Airflow (initialisation base de données)..."
+	@until docker exec airlines_airflow airflow db check >/dev/null 2>&1; do \
+		echo "Airflow : initialisation de la base en cours..."; \
+		sleep 5; \
+	done
+	@echo "Attente de la création de l'utilisateur par Airflow standalone..."
+	@until docker exec airlines_airflow airflow users list 2>/dev/null | grep admin >/dev/null 2>&1; do \
+		echo "Airflow : création de l'utilisateur admin en cours..."; \
+		sleep 5; \
+	done
+	@echo "Configuration du compte admin (admin/admin)..."
+	@docker exec airlines_airflow airflow users delete --username admin >/dev/null 2>&1 || true
+	@docker exec airlines_airflow airflow users create \
+		--username admin --password admin \
+		--firstname Admin --lastname Admin \
+		--role Admin --email admin@example.com >/dev/null 2>&1
+	@echo "Airflow est prêt sur http://localhost:8081 (admin/admin)"
 	@echo ""
 	@echo "=== Pipeline DBT ==="
 	@$(MAKE) dbt-all

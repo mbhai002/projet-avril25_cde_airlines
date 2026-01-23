@@ -383,7 +383,8 @@ class FlightOrchestrator:
                 self._ensure_indexes()
                 self._indexes_created = True
             
-            return total_processed > 0
+            # Retourne True si on a traité tous les éléments (même si ce sont des doublons)
+            return True
             
         except Exception as e:
             operation = "upsert" if upsert else "insertion"
