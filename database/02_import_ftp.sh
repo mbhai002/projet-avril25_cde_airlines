@@ -19,44 +19,62 @@ export PGPASSWORD="${POSTGRES_PASSWORD:-postgres}"
 
 # Filenames produced by the export script
 REFS_FILE="dst4_refs_latest.sql.gz"
-FLIGHT_FILE="dst4_flight_20d_latest.csv.gz"
+METAR_FILE="dst4_metar_latest.csv.gz"
+TAF_FILE="dst4_taf_latest.csv.gz"
+SKY_COND_FILE="dst4_sky_condition_latest.csv.gz"
+FLIGHT_FILE="dst4_flight_latest.csv.gz"
 
 echo "=== Starting data restoration from FTP ==="
 echo "FTP Host: $FTP_HOST"
 echo "Target Database: $PGDATABASE"
 
 # Download using curl
-echo "Downloading $REFS_FILE..."
-curl -s --user "${FTP_USER}:${FTP_PASS}" "ftp://${FTP_HOST}${FTP_DIR}/${REFS_FILE}" -o "/tmp/${REFS_FILE}"
-
-echo "Downloading $FLIGHT_FILE..."
-curl -s --user "${FTP_USER}:${FTP_PASS}" "ftp://${FTP_HOST}${FTP_DIR}/${FLIGHT_FILE}" -o "/tmp/${FLIGHT_FILE}"
+for FILE in "$REFS_FILE" "$METAR_FILE" "$TAF_FILE" "$SKY_COND_FILE" "$FLIGHT_FILE"; do
+    echo "Downloading $FILE..."
+    curl -s --user "${FTP_USER}:${FTP_PASS}" "ftp://${FTP_HOST}${FTP_DIR}/${FILE}" -o "/tmp/${FILE}"
+done
 
 # Check if files were downloaded successfully
-if [ ! -f "/tmp/${REFS_FILE}" ] || [ ! -f "/tmp/${FLIGHT_FILE}" ]; then
-    echo "Error: Failed to download backup files from FTP."
-    exit 1
-fi
+for FILE in "$REFS_FILE" "$METAR_FILE" "$TAF_FILE" "$SKY_COND_FILE" "$FLIGHT_FILE"; do
+    if [ ! -f "/tmp/${FILE}" ]; then
+        echo "Error: Failed to download $FILE from FTP."
+        exit 1
+    fi
+done
 
 echo "Decompressing files..."
 gunzip -f "/tmp/${REFS_FILE}"
+gunzip -f "/tmp/${METAR_FILE}"
+gunzip -f "/tmp/${TAF_FILE}"
+gunzip -f "/tmp/${SKY_COND_FILE}"
 gunzip -f "/tmp/${FLIGHT_FILE}"
 
-# The files after gunzip
-REFS_SQL="/tmp/dst4_refs_latest.sql"
-FLIGHT_CSV="/tmp/dst4_flight_20d_latest.csv"
+# Paths for imported files (gunzip removes the .gz extension)
+REFS_SQL="/tmp/${REFS_FILE%.gz}"
+METAR_CSV="/tmp/${METAR_FILE%.gz}"
+TAF_CSV="/tmp/${TAF_FILE%.gz}"
+SKY_COND_CSV="/tmp/${SKY_COND_FILE%.gz}"
+FLIGHT_CSV="/tmp/${FLIGHT_FILE%.gz}"
 
 echo "Truncating existing tables to avoid unique constraint violations..."
-# Order is important for FK constraints if CASCADE is not used, but CASCADE is safer.
 psql -U "$PGUSER" -d "$PGDATABASE" -c "TRUNCATE public.flight, public.metar, public.taf, public.sky_condition, public.sky_cover_reference RESTART IDENTITY CASCADE;"
 
-echo "Loading reference data (metar, taf, sky_condition, sky_cover_reference)..."
+echo "Loading reference data (sky_cover_reference)..."
 psql -U "$PGUSER" -d "$PGDATABASE" -f "$REFS_SQL"
+
+echo "Loading METAR data..."
+psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.metar FROM '$METAR_CSV' WITH (FORMAT csv, HEADER true)"
+
+echo "Loading TAF data..."
+psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.taf FROM '$TAF_CSV' WITH (FORMAT csv, HEADER true)"
+
+echo "Loading Sky Conditions data..."
+psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.sky_condition FROM '$SKY_COND_CSV' WITH (FORMAT csv, HEADER true)"
 
 echo "Loading flight data..."
 psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.flight FROM '$FLIGHT_CSV' WITH (FORMAT csv, HEADER true)"
 
 echo "Cleaning up temporary files..."
-rm -f "$REFS_SQL" "$FLIGHT_CSV"
+rm -f "$REFS_SQL" "$METAR_CSV" "$TAF_CSV" "$SKY_COND_CSV" "$FLIGHT_CSV"
 
 echo "=== data restoration complete ✔ ==="
