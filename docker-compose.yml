@@ -1,0 +1,240 @@
+version: '3.8'
+
+services:
+  # Service PostgreSQL
+  postgresql:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: airlines_postgresql
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: airlines_db
+      # Variables pour l'import FTP (récupérées du .env)
+      FTP_HOST: ${FTP_HOST}
+      FTP_USER: ${FTP_USERNAME}
+      FTP_PASS: ${FTP_PASSWORD}
+      FTP_DIR: ${FTP_BACKUP_DIR:-/backup}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Montage des scripts d'initialisation (ordre alphabétique)
+      - ./database/00_init_airflow.sql:/docker-entrypoint-initdb.d/00_init_airflow.sql
+      - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/02_import_ftp.sh:/docker-entrypoint-initdb.d/02_import_ftp.sh
+      # Volume persistant pour les données
+      - postgresql_data:/var/lib/postgresql/data
+    networks:
+      - airlines_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Service MongoDB
+  mongodb:
+    image: mongo:7.0
+    container_name: airlines_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: airlines_db
+    ports:
+      - "27017:27017"
+    volumes:
+      # Volume persistant pour les données
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - airlines_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service Application Python (Déplacé dans Airflow)
+  # flight-collector:
+  #   build:
+  #     context: ./flight-collector
+  #     dockerfile: Dockerfile
+  #   container_name: airlines_app
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
+  #     - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
+  #   volumes:
+  #     # Montage du code source pour le développement
+  #     - ./flight-collector/config:/app/config
+  #     - ./flight-collector/data:/app/data
+  #     - ./flight-collector/orchestration:/app/orchestration
+  #     - ./flight-collector/utils:/app/utils
+  #     - ./flight-collector/machine_learning:/app/machine_learning
+  #     - ./flight-collector/main.py:/app/main.py
+  #     # Volumes pour les données persistantes
+  #     - ./flight-collector/logs:/app/logs
+  #   networks:
+  #     - airlines_network
+  #   depends_on:
+  #     postgresql:
+  #       condition: service_healthy
+  #     mongodb:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  # Service pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:8.6
+    container_name: airlines_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 80
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./flight-collector/config/pgadmin_servers.json:/pgadmin4/servers.json
+      - ./flight-collector/config/pgadmin_pgpass:/pgpass
+    networks:
+      - airlines_network
+    depends_on:
+      - postgresql
+
+  # Service DBT Prepare
+  dbt_prepare:
+    build: ./airlines-dbt-postgres/dbt_prepare
+    container_name: airlines_dbt_prepare
+    env_file:
+      - .env
+    volumes:
+      - ${DBT_SOURCE_DIR}:/seed_source 
+      - ${DBT_TARGET_DIR}:/seeds
+      - ./airlines-dbt-postgres/dbt_prepare:/app
+    environment:
+      SOURCE_DIR: /seed_source
+      TARGET_DIR: /seeds
+      DBT_HOST: airlines_postgresql
+      DBT_PORT: 5432
+      DBT_USER: postgres
+      DBT_PASSWORD: postgres
+      DBT_DBNAME: airlines_db
+    networks:
+      - airlines_network
+
+  # Service DBT
+  dbt:
+    build: ./airlines-dbt-postgres/dbt
+    container_name: airlines_dbt
+    env_file:
+      - .env
+    entrypoint: ["/bin/bash", "/app/entrypoint.sh"]
+    volumes:
+      - ./airlines-dbt-postgres/dbt:/app
+    environment:
+      DBT_HOST: airlines_postgresql
+      DBT_PORT: 5432
+      DBT_USER: postgres
+      DBT_PASSWORD: postgres
+      DBT_DBNAME: airlines_db
+    networks:
+      - airlines_network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  # Service FastAPI
+  fastapi:
+    build:
+      context: ./web/FastAPI
+      dockerfile: Dockerfile
+    container_name: airlines_fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./web/FastAPI/main.py:/app/main.py
+    environment:
+      - DB_HOST=airlines_postgresql
+    networks:
+      - airlines_network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Service Dash
+  dash:
+    build:
+      context: ./web/dash
+      dockerfile: Dockerfile
+    container_name: airlines_dash
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./web/dash/app.py:/app/app.py
+      - ./web/dash/pages:/app/pages
+    environment:
+      - API_URL=http://airlines_fastapi:8000
+    networks:
+      - airlines_network
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
+  # Service Airflow (Scheduler + Webserver)
+  airflow:
+    build:
+      context: .
+      dockerfile: ./airflow/Dockerfile.airflow
+    container_name: airlines_airflow
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgresql:5432/airlines_db?options=-csearch_path%3Dairflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - PYTHONWARNINGS=ignore:logging_level option,ignore:in-memory storage
+      - PYTHONPATH=/opt/airflow/flight-collector
+      - AIRFLOW_UID=1000
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - MONGODB_URI=mongodb://admin:admin123@mongodb:27017/
+      - POSTGRESQL_URI=postgresql://postgres:postgres@postgresql:5432/airlines_db
+    env_file:
+      - .env
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./flight-collector:/opt/airflow/flight-collector
+      - airflow_data:/opt/airflow
+    ports:
+      - "8081:8080"
+    command: standalone
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - airlines_network
+    user: "1000:0"
+
+volumes:
+  postgresql_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  pgadmin_data:
+    driver: local
+  airflow_data:
+    driver: local
+
+networks:
+  airlines_network:
+    driver: bridge

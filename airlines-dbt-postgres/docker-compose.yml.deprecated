@@ -1,0 +1,34 @@
+services:
+
+  dbt_prepare:
+    build: ./dbt_prepare
+    container_name: dbt_prepare
+    volumes:
+      - ${DBT_SOURCE_DIR}:/seed_source 
+      - ${DBT_TARGET_DIR}:/seeds
+      - ./dbt_prepare:/app
+    environment:
+      SOURCE_DIR: /seed_source
+      TARGET_DIR: /seeds
+    networks:
+      - airlines_network
+
+  dbt:
+    build: ./dbt
+    volumes:
+      - ./dbt:/app
+    environment:
+      DBT_HOST: airlines_postgresql
+      DBT_PORT: 5432
+      DBT_USER: ${POSTGRES_USER}
+      DBT_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_DBNAME: ${POSTGRES_DB}
+    networks:
+      - airlines_network
+
+volumes:
+
+networks:
+  airlines_network:
+    external: true
+

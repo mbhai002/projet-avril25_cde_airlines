@@ -1,0 +1,40 @@
+name: dbt CI with cleanup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  dbt-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Configure environment
+      run: |
+        echo "API_NINJAS_KEY=${{ secrets.API_NINJAS_KEY }}" >> $GITHUB_ENV
+
+    - name: Start docker-compose
+      run: docker compose up -d --build
+
+    - name: Wait for postgres
+      run: |
+        echo "Waiting for PostgreSQL..."
+        sleep 10
+
+    - name: dbt seed
+      run: docker compose exec dbt dbt seed --profiles-dir /app
+
+    - name: Cleanup duplicated airlines
+      run: docker compose run --rm cleanup_airlines
+
+    - name: dbt run
+      run: docker compose exec dbt dbt run --profiles-dir /app
+
+    - name: dbt test
+      run: docker compose exec dbt dbt test --profiles-dir /app
+

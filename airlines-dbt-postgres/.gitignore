@@ -1,0 +1,7 @@
+# Exclure dbt et autres artefacts
+target/
+logs/
+
+# Exclure les fichiers sensibles
+.env
+
