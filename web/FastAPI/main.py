@@ -143,6 +143,7 @@ class HourlyStats(BaseModel):
 
 class AirlineStats(BaseModel):
     airline: str
+    airline_name: str = None
     flights: int
     delay_rate: float
 
@@ -228,8 +229,13 @@ def search_flights(
     SELECT 
         f.flight_number,
         f.from_airport,
+        da_from.city as from_city,
+        da_from.airport_name as from_airport_name,
         f.to_airport,
+        da_to.city as to_city,
+        da_to.airport_name as to_airport_name,
         f.airline_code,
+        da.name as airline_name,
         to_char(f.departure_scheduled_utc, 'YYYY-MM-DD HH24:MI:SS') as departure_scheduled_utc,
         to_char(f.arrival_scheduled_utc, 'YYYY-MM-DD HH24:MI:SS') as arrival_scheduled_utc,
         to_char(f.arrival_actual_utc, 'YYYY-MM-DD HH24:MI:SS') as arrival_actual_utc,
@@ -250,6 +256,9 @@ def search_flights(
         m.wx_string as dep_weather_conditions
     FROM flight f
     LEFT JOIN metar m ON f.departure_metar_fk = m.id
+    LEFT JOIN dim_airports da_from ON f.from_airport = da_from.iata_code
+    LEFT JOIN dim_airports da_to ON f.to_airport = da_to.iata_code
+    LEFT JOIN dim_airlines da ON f.airline_code = da.iata
     WHERE {where_sql}
     ORDER BY f.departure_scheduled_utc DESC
     {limit_clause}
@@ -388,7 +397,14 @@ def get_airline_stats(delay_threshold: int = 10, top: int = 15, date_start: str 
             ORDER BY flights DESC
             LIMIT {top}
         )
-        SELECT * FROM ranked_airlines ORDER BY delay_rate
+        SELECT 
+            ra.airline,
+            da.name as airline_name,
+            ra.flights,
+            ra.delay_rate 
+        FROM ranked_airlines ra
+        LEFT JOIN dim_airlines da ON ra.airline = da.iata
+        ORDER BY delay_rate
     """
     return execute_query(query)
 

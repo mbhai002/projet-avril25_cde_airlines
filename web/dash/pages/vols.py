@@ -536,7 +536,7 @@ def update_airlines(n, delay_threshold, date_start, date_end):
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        y=[d['airline'] for d in data],
+        y=[d.get('airline_name') or d['airline'] for d in data],
         x=[d['delay_rate'] for d in data],
         orientation='h',
         marker=dict(
@@ -683,12 +683,14 @@ def update_insights(n, delay_threshold, date_start, date_end):
             className="mb-1"
         ))
     if riskiest_airline and safest_airline:
+        riskiest_name = riskiest_airline.get('airline_name') or riskiest_airline['airline']
+        safest_name = safest_airline.get('airline_name') or safest_airline['airline']
         items.append(html.Li(
-            f"Compagnie la plus exposee: {riskiest_airline['airline']} ({riskiest_airline['delay_rate']:.1f}% retards)",
+            f"Compagnie la plus exposee: {riskiest_name} ({riskiest_airline['delay_rate']:.1f}% retards)",
             className="mb-1"
         ))
         items.append(html.Li(
-            f"Compagnie la plus fiable: {safest_airline['airline']} ({safest_airline['delay_rate']:.1f}% retards)",
+            f"Compagnie la plus fiable: {safest_name} ({safest_airline['delay_rate']:.1f}% retards)",
             className="mb-1"
         ))
     if busiest_day:
@@ -736,12 +738,17 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
         
         flight_cat = flight.get('dep_flight_category')
         flight['meteo_cat'] = flight_cat.upper() if flight_cat else 'N/A'
+
+        # Nouvelles etiquettes pour l'affichage
+        flight['from_label'] = f"{flight.get('from_city') or 'N/A'} ({flight.get('from_airport')})"
+        flight['to_label'] = f"{flight.get('to_city') or 'N/A'} ({flight.get('to_airport')})"
+        flight['airline_label'] = flight.get('airline_name') or flight.get('airline_code')
     
     columns = [
         {"name": "Vol", "id": "flight_number"},
-        {"name": "De", "id": "from_airport"},
-        {"name": "Vers", "id": "to_airport"},
-        {"name": "Compagnie", "id": "airline_code"},
+        {"name": "De", "id": "from_label"},
+        {"name": "Vers", "id": "to_label"},
+        {"name": "Compagnie", "id": "airline_label"},
         {"name": "Depart", "id": "departure_scheduled_utc"},
         {"name": "Arrivee prevue", "id": "arrival_scheduled_utc"},
         {"name": "Arrivee reelle", "id": "arrival_actual_utc"},
@@ -750,6 +757,15 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
         {"name": "Meteo", "id": "meteo_cat"},
         {"name": "Probabilite", "id": "delay_prob_pct"},
         {"name": "Risque", "id": "risk"},
+    ]
+
+    # Tooltips pour les noms complets (aeroports et compagnies)
+    tooltip_data = [
+        {
+            'from_label': {'value': str(row.get('from_airport_name') or 'N/A'), 'type': 'markdown'},
+            'to_label': {'value': str(row.get('to_airport_name') or 'N/A'), 'type': 'markdown'},
+            'airline_label': {'value': str(row.get('airline_name') or 'N/A'), 'type': 'markdown'}
+        } for row in flights
     ]
     
     style_data_conditional = [
@@ -804,6 +820,9 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
                 dash_table.DataTable(
                     columns=columns,
                     data=flights,
+                    tooltip_data=tooltip_data,
+                    tooltip_delay=0,
+                    tooltip_duration=None,
                     style_table={'overflowX': 'auto'},
                     style_cell={
                         'textAlign': 'left',
@@ -935,12 +954,17 @@ def load_flights_data(date_start, date_end, risk_levels=None, flight_type='all',
         
         flight_cat = flight.get('dep_flight_category')
         flight['meteo_cat'] = flight_cat.upper() if flight_cat else 'N/A'
+
+        # Nouvelles etiquettes pour l'affichage
+        flight['from_label'] = f"{flight.get('from_city') or 'N/A'} ({flight.get('from_airport')})"
+        flight['to_label'] = f"{flight.get('to_city') or 'N/A'} ({flight.get('to_airport')})"
+        flight['airline_label'] = flight.get('airline_name') or flight.get('airline_code')
     
     columns = [
         {"name": "Vol", "id": "flight_number"},
-        {"name": "De", "id": "from_airport"},
-        {"name": "Vers", "id": "to_airport"},
-        {"name": "Compagnie", "id": "airline_code"},
+        {"name": "De", "id": "from_label"},
+        {"name": "Vers", "id": "to_label"},
+        {"name": "Compagnie", "id": "airline_label"},
         {"name": "Depart", "id": "departure_scheduled_utc"},
         {"name": "Arrivee prevue", "id": "arrival_scheduled_utc"},
         {"name": "Arrivee reelle", "id": "arrival_actual_utc"},
@@ -949,6 +973,15 @@ def load_flights_data(date_start, date_end, risk_levels=None, flight_type='all',
         {"name": "Meteo", "id": "meteo_cat"},
         {"name": "Probabilite", "id": "delay_prob_pct"},
         {"name": "Risque", "id": "risk"},
+    ]
+
+    # Tooltips pour les noms complets (aeroports et compagnies)
+    tooltip_data = [
+        {
+            'from_label': {'value': str(row.get('from_airport_name') or 'N/A'), 'type': 'markdown'},
+            'to_label': {'value': str(row.get('to_airport_name') or 'N/A'), 'type': 'markdown'},
+            'airline_label': {'value': str(row.get('airline_name') or 'N/A'), 'type': 'markdown'}
+        } for row in flights
     ]
     
     style_data_conditional = [
@@ -1086,6 +1119,9 @@ def load_flights_data(date_start, date_end, risk_levels=None, flight_type='all',
                     id='flights-table',
                     columns=columns,
                     data=flights,
+                    tooltip_data=tooltip_data,
+                    tooltip_delay=0,
+                    tooltip_duration=None,
                     filter_action="native",
                     sort_action="native",
                     sort_mode="multi",
