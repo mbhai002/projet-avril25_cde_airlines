@@ -1,6 +1,6 @@
 """
-Application Dashboard Multi-Pages - DST Airlines
-Pages: Vols, Meteo, Analyses
+Dashboard DST Airlines
+Pages: Vols, Meteo
 """
 
 import dash
@@ -29,9 +29,10 @@ navbar = dbc.Navbar(
         dbc.Row([
             dbc.Col([
                 dbc.Nav([
-                    dbc.NavItem(dbc.NavLink("Vols", href="/", active="exact")),
-                    dbc.NavItem(dbc.NavLink("Meteo", href="/meteo", active="exact")),
-                    dbc.NavItem(dbc.NavLink("Analyses", href="/analyses", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Synthèse", href="/", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Exploration", href="/explorer", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Suivi Vol & ML", href="/suivi", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Météo", href="/meteo", active="exact")),
                 ], navbar=True)
             ])
         ], className="g-0 ms-auto flex-nowrap mt-3 mt-md-0", align="center"),

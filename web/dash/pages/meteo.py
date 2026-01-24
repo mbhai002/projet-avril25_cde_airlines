@@ -1,6 +1,5 @@
 """
-Page Meteo - Analyse Meteorologique
-METAR, TAF et conditions meteo
+Page Meteo - Observations et Previsions
 """
 
 import dash
@@ -9,6 +8,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import plotly.express as px
 import requests
+from datetime import datetime, timedelta
 import os
 
 dash.register_page(__name__, path='/meteo', name='Meteo')
@@ -45,6 +45,47 @@ layout = html.Div([
         ])
     ]),
     
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.Label([
+                            html.I(className="fas fa-calendar-alt me-2"),
+                            html.Strong("Periode d'analyse meteo")
+                        ], className="mb-2"),
+                        dbc.Row([
+                            dbc.Col([
+                                dcc.DatePickerSingle(
+                                    id='meteo-date-start',
+                                    date=(datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d'),
+                                    display_format='DD/MM/YYYY',
+                                    placeholder='Date debut',
+                                    first_day_of_week=1,
+                                    style={'width': '100%'}
+                                )
+                            ], width=4),
+                            dbc.Col([
+                                dcc.DatePickerSingle(
+                                    id='meteo-date-end',
+                                    date=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
+                                    display_format='DD/MM/YYYY',
+                                    placeholder='Date fin',
+                                    first_day_of_week=1,
+                                    style={'width': '100%'}
+                                )
+                            ], width=4),
+                            dbc.Col([
+                                html.Small("Par defaut: 20 derniers jours (S-1). Selectionnez 2 dates pour une periode", 
+                                          className="text-muted d-block mt-2")
+                            ], width=4),
+                        ], className="g-2")
+                    ], className="text-center")
+                ])
+            ], className="shadow-sm mb-4")
+        ])
+    ]),
+    
     dbc.Row(id='meteo-kpi-cards', className="mb-4"),
     
     dbc.Row([
@@ -68,49 +109,46 @@ layout = html.Div([
     
     dbc.Row([
         dbc.Col([
-            dbc.Card([
-                dbc.CardHeader(html.H5("Top 20 Aeroports - Observations Meteo", className="mb-0")),
-                dbc.CardBody([
-                    dcc.Graph(id='meteo-top-airports', config={'displayModeBar': False})
-                ])
-            ], className="shadow-sm")
-        ])
-    ], className="mb-4"),
-
-    dbc.Row([
-        dbc.Col([
-            html.H3("Correlations Meteo → Retards", className="mb-3 mt-4")
+            html.H4("Analyse Visibilite", className="mb-3 mt-4")
         ])
     ]),
-
+    
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H5("Impact Visibilite sur Retards", className="mb-0")),
+                dbc.CardHeader(html.H5("Distribution Visibilite", className="mb-0")),
                 dbc.CardBody([
-                    dcc.Graph(id='meteo-corr-visibility', config={'displayModeBar': False})
+                    dcc.Graph(id='meteo-visibility-distribution', config={'displayModeBar': False})
                 ])
             ], className="shadow-sm")
         ], width=6),
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H5("Impact Vent sur Retards", className="mb-0")),
+                dbc.CardHeader(html.H5("Evolution Visibilite Moyenne", className="mb-0")),
                 dbc.CardBody([
-                    dcc.Graph(id='meteo-corr-wind', config={'displayModeBar': False})
+                    dcc.Graph(id='meteo-visibility-timeline', config={'displayModeBar': False})
                 ])
             ], className="shadow-sm")
         ], width=6),
     ], className="mb-4"),
-
+    
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H5("Top Conditions Meteo avec Retards Eleves", className="mb-0")),
+                dbc.CardHeader(html.H5("Temperature et Point de Rosee", className="mb-0")),
                 dbc.CardBody([
-                    dcc.Graph(id='meteo-corr-conditions', config={'displayModeBar': False})
+                    dcc.Graph(id='meteo-temperature-dewpoint', config={'displayModeBar': False})
                 ])
             ], className="shadow-sm")
-        ])
+        ], width=6),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader(html.H5("Vitesse du Vent", className="mb-0")),
+                dbc.CardBody([
+                    dcc.Graph(id='meteo-wind-speed', config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=6),
     ], className="mb-4"),
     
     dbc.Row([
@@ -134,10 +172,21 @@ layout = html.Div([
 
 @callback(
     Output('meteo-kpi-cards', 'children'),
-    Input('interval-meteo', 'n_intervals')
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_kpis(n):
-    stats = fetch_api("/meteo/stats")
+def update_kpis(n, date_start, date_end):
+    endpoint = "/meteo/stats"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+        if date_end:
+            endpoint += f"&date_end={date_end}"
+    elif date_end:
+        endpoint += f"?date_end={date_end}"
+    
+    stats = fetch_api(endpoint)
     if not stats:
         return []
     
@@ -167,10 +216,21 @@ def update_kpis(n):
 
 @callback(
     Output('meteo-flight-categories', 'figure'),
-    Input('interval-meteo', 'n_intervals')
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_flight_categories(n):
-    data = fetch_api("/meteo/flight-categories")
+def update_flight_categories(n, date_start, date_end):
+    endpoint = "/meteo/flight-categories"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+        if date_end:
+            endpoint += f"&date_end={date_end}"
+    elif date_end:
+        endpoint += f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -201,10 +261,21 @@ def update_flight_categories(n):
 
 @callback(
     Output('meteo-weather-conditions', 'figure'),
-    Input('interval-meteo', 'n_intervals')
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_weather_conditions(n):
-    data = fetch_api("/meteo/weather-conditions")
+def update_weather_conditions(n, date_start, date_end):
+    endpoint = "/meteo/weather-conditions"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+        if date_end:
+            endpoint += f"&date_end={date_end}"
+    elif date_end:
+        endpoint += f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -228,140 +299,153 @@ def update_weather_conditions(n):
     return fig
 
 @callback(
-    Output('meteo-top-airports', 'figure'),
-    Input('interval-meteo', 'n_intervals')
+    Output('meteo-visibility-distribution', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_top_airports(n):
-    data = fetch_api("/meteo/top-airports?limit=20")
+def update_visibility_distribution(n, date_start, date_end):
+    endpoint = "/meteo/visibility-distribution"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}" if "?" in endpoint else f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=[d['airport'] for d in data],
-        y=[d['observations'] for d in data],
-        marker_color='#9b59b6',
-        text=[f"{d['observations']:,}" for d in data],
-        textposition='outside',
-        hovertemplate='<b>%{x}</b><br>Observations: %{y:,}<br>Temp moyenne: %{customdata[0]:.1f}°C<br>Vent moyen: %{customdata[1]:.1f} kt<br>Visibilite: %{customdata[2]:.1f} mi<extra></extra>',
-        customdata=[[d['avg_temp'], d['avg_wind_speed'], d['avg_visibility']] for d in data]
+        x=[d['visibility_range'] for d in data],
+        y=[d['count'] for d in data],
+        marker_color='#3498db',
+        text=[f"{d['count']:,}" for d in data],
+        textposition='outside'
     ))
     fig.update_layout(
-        title="Aeroports avec le Plus d'Observations",
-        xaxis_title="Aeroport",
+        title="Repartition des Observations par Visibilite",
+        xaxis_title="Visibilite (miles)",
         yaxis_title="Nombre observations",
         template='plotly_white',
-        height=400
+        height=350
     )
     return fig
 
 @callback(
-    Output('meteo-corr-visibility', 'figure'),
-    Input('interval-meteo', 'n_intervals')
+    Output('meteo-visibility-timeline', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_corr_visibility(n):
-    data = fetch_api(f"/correlations/visibility-delays?delay_threshold={DELAY_THRESHOLD}")
+def update_visibility_timeline(n, date_start, date_end):
+    endpoint = "/meteo/visibility-timeline"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}" if "?" in endpoint else f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name='Total vols',
-        x=[d['visibility_range'] for d in data],
-        y=[d['total_flights'] for d in data],
-        marker_color='#3498db',
-        yaxis='y',
-        offsetgroup=1
-    ))
     fig.add_trace(go.Scatter(
-        name='Taux retard',
-        x=[d['visibility_range'] for d in data],
-        y=[d['delay_rate'] for d in data],
-        marker_color='#e74c3c',
-        yaxis='y2',
+        x=[d['date'] for d in data],
+        y=[d['avg_visibility'] for d in data],
         mode='lines+markers',
-        line=dict(width=3)
+        marker=dict(size=8, color='#3498db'),
+        line=dict(width=2, color='#3498db'),
+        fill='tozeroy',
+        fillcolor='rgba(52, 152, 219, 0.2)'
     ))
     fig.update_layout(
-        title="Correlation Visibilite - Retards",
-        xaxis_title="Plage visibilite",
-        yaxis=dict(title="Nombre vols", side='left'),
-        yaxis2=dict(title="Taux retard (%)", side='right', overlaying='y'),
+        title="Evolution Visibilite Moyenne par Jour",
+        xaxis_title="Date",
+        yaxis_title="Visibilite moyenne (miles)",
         template='plotly_white',
-        height=400,
+        height=350
+    )
+    return fig
+
+@callback(
+    Output('meteo-temperature-dewpoint', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
+)
+def update_temperature_dewpoint(n, date_start, date_end):
+    endpoint = "/meteo/temperature-stats"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}" if "?" in endpoint else f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
+    if not data:
+        return go.Figure()
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[d['date'] for d in data],
+        y=[d['avg_temp'] for d in data],
+        mode='lines+markers',
+        name='Temperature',
+        marker=dict(size=6, color='#e74c3c'),
+        line=dict(width=2)
+    ))
+    fig.add_trace(go.Scatter(
+        x=[d['date'] for d in data],
+        y=[d['avg_dewpoint'] for d in data],
+        mode='lines+markers',
+        name='Point de rosee',
+        marker=dict(size=6, color='#3498db'),
+        line=dict(width=2)
+    ))
+    fig.update_layout(
+        title="Evolution Temperature et Point de Rosee",
+        xaxis_title="Date",
+        yaxis_title="Temperature (°C)",
+        template='plotly_white',
+        height=350,
         hovermode='x unified'
     )
     return fig
 
 @callback(
-    Output('meteo-corr-wind', 'figure'),
-    Input('interval-meteo', 'n_intervals')
+    Output('meteo-wind-speed', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_corr_wind(n):
-    data = fetch_api(f"/correlations/wind-delays?delay_threshold={DELAY_THRESHOLD}")
+def update_wind_speed(n, date_start, date_end):
+    endpoint = "/meteo/wind-stats"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}" if "?" in endpoint else f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        name='Total vols',
         x=[d['wind_range'] for d in data],
-        y=[d['total_flights'] for d in data],
+        y=[d['count'] for d in data],
         marker_color='#9b59b6',
-        yaxis='y',
-        offsetgroup=1
-    ))
-    fig.add_trace(go.Scatter(
-        name='Taux retard',
-        x=[d['wind_range'] for d in data],
-        y=[d['delay_rate'] for d in data],
-        marker_color='#e74c3c',
-        yaxis='y2',
-        mode='lines+markers',
-        line=dict(width=3)
+        text=[f"{d['count']:,}" for d in data],
+        textposition='outside'
     ))
     fig.update_layout(
-        title="Correlation Vent - Retards",
-        xaxis_title="Vitesse vent (kt)",
-        yaxis=dict(title="Nombre vols", side='left'),
-        yaxis2=dict(title="Taux retard (%)", side='right', overlaying='y'),
+        title="Distribution Vitesse du Vent",
+        xaxis_title="Vitesse (kt)",
+        yaxis_title="Nombre observations",
         template='plotly_white',
-        height=400,
-        hovermode='x unified'
-    )
-    return fig
-
-@callback(
-    Output('meteo-corr-conditions', 'figure'),
-    Input('interval-meteo', 'n_intervals')
-)
-def update_corr_conditions(n):
-    data = fetch_api(f"/correlations/meteo-delays?delay_threshold={DELAY_THRESHOLD}")
-    if not data:
-        return go.Figure()
-    
-    top_data = sorted(data, key=lambda x: x['delay_rate'], reverse=True)[:20]
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=[f"{d['flight_category']} - {d['wx_string'] if d['wx_string'] else 'CLEAR'}" for d in top_data],
-        y=[d['delay_rate'] for d in top_data],
-        marker=dict(
-            color=[d['delay_rate'] for d in top_data],
-            colorscale='Reds',
-            showscale=True,
-            colorbar=dict(title="Taux<br>retard (%)")
-        ),
-        text=[f"{d['delay_rate']:.1f}%" for d in top_data],
-        textposition='outside',
-        hovertemplate='<b>%{x}</b><br>Taux retard: %{y:.1f}%<br>Vols totaux: %{customdata[0]:,}<br>Vols retardes: %{customdata[1]:,}<br>Retard moyen: %{customdata[2]:.1f} min<extra></extra>',
-        customdata=[[d['total_flights'], d['delayed_flights'], d['avg_delay_min']] for d in top_data]
-    ))
-    fig.update_layout(
-        title="Top 20 Conditions Meteo avec Taux Retard Eleve",
-        xaxis_title="Categorie - Condition",
-        yaxis_title="Taux retard (%)",
-        template='plotly_white',
-        height=500,
-        xaxis_tickangle=-45
+        height=350
     )
     return fig

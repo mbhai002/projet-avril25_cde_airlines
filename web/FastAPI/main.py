@@ -1,3 +1,25 @@
+"""
+DST Airlines API - Prevision des retards de vols
+
+API REST pour consulter les donnees de vols, les predictions ML et les statistiques meteo.
+
+Base de donnees:
+- flight: vols avec predictions ML
+- metar: observations meteo
+- taf: previsions meteo
+- sky_condition: conditions du ciel
+
+Endpoints:
+- /search-flights: recherche de vols avec filtres
+- /stats: statistiques globales
+- /stats/daily: evolution par jour
+- /stats/hourly: analyse par heure
+- /stats/airlines: classement compagnies
+- /ml/confusion: matrice de confusion
+- /ml/risk-distribution: repartition par risque
+- /meteo/*: donnees meteorologiques
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
@@ -11,7 +33,7 @@ import atexit
 
 app = FastAPI(
     title="DST Airlines API",
-    description="API prevision retards vols",
+    description="API prevision retards vols avec Machine Learning",
     version="1.0.0"
 )
 
@@ -34,21 +56,20 @@ DSN = f"host={DB_HOST} port=5432 dbname=airlines_db user=postgres password=postg
 connection_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DSN)
 
 def get_db_connection():
-    """Recupere une connexion du pool"""
     return connection_pool.getconn()
 
 def return_db_connection(conn):
-    """Retourne la connexion au pool pour reutilisation"""
     connection_pool.putconn(conn)
 
 @atexit.register
 def close_pool():
-    """Ferme le pool de connexions a la sortie de l'application"""
     if connection_pool:
         connection_pool.closeall()
 
 def init_db_indexes():
-    """Cree les index sur les colonnes les plus utilisees pour accelerer les requetes"""
+    """
+    Cree les index sur les colonnes importantes pour accelerer les requetes
+    """
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -76,7 +97,7 @@ def clean_value(value):
     return value
 
 def execute_query(query):
-    """Execute une requete SQL et retourne tous les resultats"""
+    """Execute une requete SQL et retourne les resultats"""
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -122,6 +143,7 @@ class HourlyStats(BaseModel):
 
 class AirlineStats(BaseModel):
     airline: str
+    airline_name: str = None
     flights: int
     delay_rate: float
 
@@ -163,75 +185,164 @@ def search_flights(
     departure_date: str = None,
     date_start: str = None,
     date_end: str = None,
+    airline_code: str = None,
+    risk_levels: str = None,
+    delayed_only: bool = None,
+    predicted_delay_only: bool = None,
+    has_ml_prediction: bool = None,
+    delay_min_threshold: int = 10,
     limit: int = None
-):
-    """Recherche de vols avec filtres optionnels sur numero, dates et limite de resultats"""
+):  
+    """
+    Recherche de vols avec filtres multiples
+    """
     where_clauses = ["departure_scheduled_utc IS NOT NULL"]
     
     if flight_number:
         where_clauses.append(f"flight_number ILIKE '%{flight_number}%'")
     if departure_date:
-        where_clauses.append(f"DATE(departure_scheduled_utc) = '{departure_date}'")
+        where_clauses.append(f"departure_scheduled_utc::date = '{departure_date}'::date")
     if date_start:
-        where_clauses.append(f"DATE(departure_scheduled_utc) >= '{date_start}'")
+        where_clauses.append(f"departure_scheduled_utc >= '{date_start}'::timestamp")
     if date_end:
-        where_clauses.append(f"DATE(departure_scheduled_utc) <= '{date_end}'")
+        where_clauses.append(f"departure_scheduled_utc <= '{date_end}'::timestamp + interval '1 day'")
+    if airline_code:
+        where_clauses.append(f"airline_code = '{airline_code}'")
+    
+    if risk_levels:
+        levels = [f"'{level.strip().lower()}'" for level in risk_levels.split(',')]
+        where_clauses.append(f"delay_risk_level IN ({','.join(levels)})")
+    
+    if delayed_only:
+        where_clauses.append(f"delay_min >= {delay_min_threshold}")
+    
+    if predicted_delay_only:
+        where_clauses.append("delay_prob > 0.5")
+    
+    if has_ml_prediction:
+        where_clauses.append("delay_prob IS NOT NULL")
     
     where_sql = " AND ".join(where_clauses)
-    limit_clause = f"LIMIT {limit}" if limit is not None else ""
+    limit_clause = f"LIMIT {limit}" if limit is not None else "LIMIT 10000"
     
     query = f"""
     SELECT 
-        flight_number,
-        from_airport,
-        to_airport,
-        airline_code,
-        departure_scheduled_utc::text as departure_scheduled_utc,
-        arrival_scheduled_utc::text as arrival_scheduled_utc,
-        arrival_actual_utc::text as arrival_actual_utc,
-        delay_min,
-        delay_prob,
-        delay_risk_level,
-        CASE 
-            WHEN delay_prob > 0.5 THEN 'OUI'
-            WHEN delay_prob IS NOT NULL THEN 'NON'
-            ELSE 'N/A'
-        END as prediction_retard
-    FROM flight
+        f.flight_number,
+        f.from_airport,
+        da_from.city as from_city,
+        da_from.airport_name as from_airport_name,
+        f.to_airport,
+        da_to.city as to_city,
+        da_to.airport_name as to_airport_name,
+        f.airline_code,
+        da.name as airline_name,
+        to_char(f.departure_scheduled_utc, 'YYYY-MM-DD HH24:MI:SS') as departure_scheduled_utc,
+        to_char(f.arrival_scheduled_utc, 'YYYY-MM-DD HH24:MI:SS') as arrival_scheduled_utc,
+        to_char(f.arrival_actual_utc, 'YYYY-MM-DD HH24:MI:SS') as arrival_actual_utc,
+        COALESCE(
+            f.delay_min,
+            CASE 
+                WHEN f.arrival_actual_utc IS NOT NULL AND f.arrival_scheduled_utc IS NOT NULL 
+                THEN EXTRACT(EPOCH FROM (f.arrival_actual_utc - f.arrival_scheduled_utc))/60
+                ELSE NULL
+            END
+        ) as delay_min,
+        f.delay_prob,
+        f.delay_risk_level,
+        m.visibility_statute_mi as dep_visibility_mi,
+        m.flight_category as dep_flight_category,
+        m.temp_c as dep_temp_c,
+        m.wind_speed_kt as dep_wind_speed_kt,
+        m.wx_string as dep_weather_conditions
+    FROM flight f
+    LEFT JOIN metar m ON f.departure_metar_fk = m.id
+    LEFT JOIN dim_airports da_from ON f.from_airport = da_from.iata_code
+    LEFT JOIN dim_airports da_to ON f.to_airport = da_to.iata_code
+    LEFT JOIN dim_airlines da ON f.airline_code = da.iata
     WHERE {where_sql}
-    ORDER BY departure_scheduled_utc DESC
+    ORDER BY f.departure_scheduled_utc DESC
     {limit_clause}
     """
     
     return execute_query(query)
 
+@app.get("/filter-options")
+def get_filter_options():
+    """Retourne les options de filtres disponibles"""
+    query_airlines = """
+        SELECT DISTINCT airline_code 
+        FROM flight 
+        WHERE airline_code IS NOT NULL 
+        ORDER BY airline_code
+    """
+    
+    query_risk_levels = """
+        SELECT DISTINCT delay_risk_level, COUNT(*) as count
+        FROM flight 
+        WHERE delay_risk_level IS NOT NULL 
+        GROUP BY delay_risk_level
+        ORDER BY 
+            CASE delay_risk_level
+                WHEN 'low' THEN 1
+                WHEN 'medium' THEN 2
+                WHEN 'high' THEN 3
+            END
+    """
+    
+    airlines = execute_query(query_airlines)
+    risk_levels = execute_query(query_risk_levels)
+    
+    return {
+        "airlines": [a['airline_code'] for a in airlines],
+        "risk_levels": [
+            {"value": r['delay_risk_level'], "count": r['count']} 
+            for r in risk_levels
+        ],
+        "delay_thresholds": [5, 10, 15, 20, 30, 45, 60]
+    }
+
 @app.get("/stats", response_model=FlightStats)
-def get_flight_stats(delay_threshold: int = 10):
-    """Statistiques globales des vols avec taux de retard et precision ML"""
+def get_flight_stats(delay_threshold: int = 10, date_start: str = None, date_end: str = None):
+    """Statistiques globales des vols"""
+    where_clause = "WHERE 1=1"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
     query = f"""
         SELECT 
             COUNT(*) as total_flights,
             SUM(CASE WHEN delay_min >= {delay_threshold} THEN 1 ELSE 0 END) as delayed_flights,
             ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate,
-            ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN delay_min ELSE NULL END), 2) as avg_delay,
+            COALESCE(ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN delay_min ELSE NULL END), 2), 0) as avg_delay,
             COUNT(CASE WHEN delay_prob IS NOT NULL THEN 1 END) as flights_with_ml,
-            ROUND(
+            COALESCE(ROUND(
                 AVG(CASE 
                     WHEN delay_prob IS NOT NULL THEN 
                         CASE WHEN (delay_prob > 0.5 AND delay_min >= {delay_threshold}) OR 
                                   (delay_prob <= 0.5 AND delay_min < {delay_threshold}) 
                         THEN 1.0 ELSE 0.0 END 
                 END) * 100, 2
-            ) as ml_accuracy,
+            ), 0) as ml_accuracy,
             MIN(departure_scheduled_utc::date) as date_min,
             MAX(departure_scheduled_utc::date) as date_max
         FROM flight
+        {where_clause}
     """
     return execute_query_one(query)
 
 @app.get("/stats/daily", response_model=List[DailyStats])
-def get_daily_stats(delay_threshold: int = 10):
-    """Statistiques journalieres pour suivre l'evolution des retards dans le temps"""
+def get_daily_stats(delay_threshold: int = 10, date_start: str = None, date_end: str = None):
+    """
+    Statistiques par jour
+    """
+    where_clause = "WHERE 1=1"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
     query = f"""
         SELECT 
             departure_scheduled_utc::date as date,
@@ -239,28 +350,41 @@ def get_daily_stats(delay_threshold: int = 10):
             SUM(CASE WHEN delay_min >= {delay_threshold} THEN 1 ELSE 0 END) as delayed,
             ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate
         FROM flight
+        {where_clause}
         GROUP BY departure_scheduled_utc::date
         ORDER BY date
     """
     return execute_query(query)
 
 @app.get("/stats/hourly", response_model=List[HourlyStats])
-def get_hourly_stats(delay_threshold: int = 10):
-    """Statistiques par heure de depart pour identifier les heures a risque"""
+def get_hourly_stats(delay_threshold: int = 10, date_start: str = None, date_end: str = None):
+    """Statistiques par heure de depart"""
+    where_clause = "WHERE 1=1"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
     query = f"""
         SELECT 
             EXTRACT(HOUR FROM departure_scheduled_utc)::int as hour,
             COUNT(*)::int as flights,
             ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate
         FROM flight
+        {where_clause}
         GROUP BY hour
         ORDER BY hour
     """
     return execute_query(query)
 
 @app.get("/stats/airlines", response_model=List[AirlineStats])
-def get_airline_stats(delay_threshold: int = 10, top: int = 15):
-    """Statistiques par compagnie aerienne classees par taux de retard"""
+def get_airline_stats(delay_threshold: int = 10, top: int = 15, date_start: str = None, date_end: str = None):
+    where_clause = "WHERE airline_code IS NOT NULL"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
     query = f"""
         WITH ranked_airlines AS (
             SELECT 
@@ -268,18 +392,31 @@ def get_airline_stats(delay_threshold: int = 10, top: int = 15):
                 COUNT(*)::int as flights,
                 ROUND(AVG(CASE WHEN delay_min >= {delay_threshold} THEN 1.0 ELSE 0.0 END) * 100, 2) as delay_rate
             FROM flight
-            WHERE airline_code IS NOT NULL
+            {where_clause}
             GROUP BY airline_code
             ORDER BY flights DESC
             LIMIT {top}
         )
-        SELECT * FROM ranked_airlines ORDER BY delay_rate
+        SELECT 
+            ra.airline,
+            da.name as airline_name,
+            ra.flights,
+            ra.delay_rate 
+        FROM ranked_airlines ra
+        LEFT JOIN dim_airlines da ON ra.airline = da.iata
+        ORDER BY delay_rate
     """
     return execute_query(query)
 
 @app.get("/ml/confusion", response_model=MLConfusion)
-def get_ml_confusion(delay_threshold: int = 10):
-    """Matrice de confusion du modele ML avec vrais/faux positifs et negatifs"""
+def get_ml_confusion(delay_threshold: int = 10, date_start: str = None, date_end: str = None):
+    """Matrice de confusion du modele ML"""
+    where_clause = "WHERE delay_prob IS NOT NULL"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
     query = f"""
         SELECT 
             SUM(CASE WHEN delay_prob > 0.5 AND delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as tp,
@@ -287,7 +424,7 @@ def get_ml_confusion(delay_threshold: int = 10):
             SUM(CASE WHEN delay_prob > 0.5 AND delay_min < {delay_threshold} THEN 1 ELSE 0 END)::int as fp,
             SUM(CASE WHEN delay_prob <= 0.5 AND delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as fn
         FROM flight
-        WHERE delay_prob IS NOT NULL
+        {where_clause}
     """
     
     result = execute_query_one(query)
@@ -298,14 +435,20 @@ def get_ml_confusion(delay_threshold: int = 10):
     return result
 
 @app.get("/ml/risk-distribution", response_model=List[RiskDistribution])
-def get_risk_distribution():
-    """Distribution des vols par niveau de risque de retard (low/medium/high)"""
-    query = """
+def get_risk_distribution(date_start: str = None, date_end: str = None):
+    """Distribution des vols par niveau de risque ML"""
+    where_clause = "WHERE delay_risk_level IS NOT NULL"
+    if date_start:
+        where_clause += f" AND departure_scheduled_utc::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND departure_scheduled_utc::date <= '{date_end}'::date"
+    
+    query = f"""
         SELECT 
             delay_risk_level,
             COUNT(*)::int as count
         FROM flight
-        WHERE delay_risk_level IS NOT NULL
+        {where_clause}
         GROUP BY delay_risk_level
         ORDER BY 
             CASE delay_risk_level
@@ -317,47 +460,92 @@ def get_risk_distribution():
     return execute_query(query)
 
 @app.get("/meteo/stats", response_model=MeteoStats)
-def get_meteo_stats():
-    """Statistiques sur les donnees meteo METAR et TAF collectees"""
-    query = """
+def get_meteo_stats(date_start: str = None, date_end: str = None):
+    """
+    Statistiques sur les donnees meteo METAR et TAF collectees
+    
+    
+    
+    
+    
+    """
+    where_metar = "WHERE 1=1"
+    where_taf = "WHERE 1=1"
+    
+    if date_start:
+        where_metar += f" AND observation_time::date >= '{date_start}'::date"
+        where_taf += f" AND issue_time::date >= '{date_start}'::date"
+    if date_end:
+        where_metar += f" AND observation_time::date <= '{date_end}'::date"
+        where_taf += f" AND issue_time::date <= '{date_end}'::date"
+    
+    query = f"""
         SELECT 
-            (SELECT COUNT(*)::int FROM metar) as total_metar,
-            (SELECT COUNT(*)::int FROM taf) as total_taf,
+            (SELECT COUNT(*)::int FROM metar {where_metar}) as total_metar,
+            (SELECT COUNT(*)::int FROM taf {where_taf}) as total_taf,
             (SELECT COUNT(*)::int FROM sky_condition) as total_sky_conditions,
-            (SELECT COUNT(DISTINCT station_id)::int FROM metar) as airports_metar,
-            (SELECT COUNT(DISTINCT station_id)::int FROM taf) as airports_taf,
-            (SELECT MIN(observation_time)::date FROM metar) as date_min_metar,
-            (SELECT MAX(observation_time)::date FROM metar) as date_max_metar,
-            (SELECT MIN(issue_time)::date FROM taf) as date_min_taf,
-            (SELECT MAX(issue_time)::date FROM taf) as date_max_taf
+            (SELECT COUNT(DISTINCT station_id)::int FROM metar {where_metar}) as airports_metar,
+            (SELECT COUNT(DISTINCT station_id)::int FROM taf {where_taf}) as airports_taf,
+            (SELECT MIN(observation_time)::date FROM metar {where_metar}) as date_min_metar,
+            (SELECT MAX(observation_time)::date FROM metar {where_metar}) as date_max_metar,
+            (SELECT MIN(issue_time)::date FROM taf {where_taf}) as date_min_taf,
+            (SELECT MAX(issue_time)::date FROM taf {where_taf}) as date_max_taf
     """
     return execute_query_one(query)
 
 @app.get("/meteo/flight-categories", response_model=List[MeteoCondition])
-def get_flight_categories():
-    """Distribution des categories de vol selon les conditions meteo (VFR/IFR/MVFR/LIFR)"""
-    query = """
+def get_flight_categories(date_start: str = None, date_end: str = None):
+    """
+    Distribution des categories de vol selon les conditions meteo (VFR/IFR/MVFR/LIFR)
+    
+    Filtre les observations METAR par periode.
+    
+    
+    
+    
+    """
+    where_clause = "WHERE flight_category IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
         SELECT 
             COALESCE(flight_category, 'UNKNOWN') as condition,
             COUNT(*)::int as count,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
         FROM metar
-        WHERE flight_category IS NOT NULL
+        {where_clause}
         GROUP BY flight_category
         ORDER BY count DESC
     """
     return execute_query(query)
 
 @app.get("/meteo/weather-conditions", response_model=List[MeteoCondition])
-def get_weather_conditions():
-    """Top 20 des conditions meteorologiques observees (pluie/neige/brouillard/etc)"""
-    query = """
+def get_weather_conditions(date_start: str = None, date_end: str = None):
+    """
+    Top 20 des conditions meteorologiques observees (pluie/neige/brouillard/etc)
+    
+    Filtre les observations METAR par periode.
+    
+    
+    
+    
+    """
+    where_clause = "WHERE wx_string IS NOT NULL OR wx_string = ''"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
         SELECT 
             COALESCE(wx_string, 'CLEAR') as condition,
             COUNT(*)::int as count,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
         FROM metar
-        WHERE wx_string IS NOT NULL OR wx_string = ''
+        {where_clause}
         GROUP BY wx_string
         ORDER BY count DESC
         LIMIT 20
@@ -365,8 +553,22 @@ def get_weather_conditions():
     return execute_query(query)
 
 @app.get("/meteo/top-airports")
-def get_top_airports(limit: int = 20):
-    """Top aeroports avec moyennes meteo (temperature/vent/visibilite)"""
+def get_top_airports(limit: int = 20, date_start: str = None, date_end: str = None):
+    """
+    Top aeroports avec moyennes meteo (temperature/vent/visibilite)
+    
+    Filtre les observations METAR par periode.
+    
+    
+    
+    
+    """
+    where_clause = "WHERE temp_c IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
     query = f"""
         SELECT 
             station_id as airport,
@@ -375,10 +577,140 @@ def get_top_airports(limit: int = 20):
             ROUND(AVG(wind_speed_kt)::numeric, 2) as avg_wind_speed,
             ROUND(AVG(visibility_statute_mi)::numeric, 2) as avg_visibility
         FROM metar
-        WHERE temp_c IS NOT NULL
+        {where_clause}
         GROUP BY station_id
         ORDER BY observations DESC
         LIMIT {limit}
+    """
+    return execute_query(query)
+
+@app.get("/meteo/visibility-distribution")
+def get_visibility_distribution(date_start: str = None, date_end: str = None):
+    """
+    Distribution des observations par plages de visibilite
+    
+    
+    
+    
+    """
+    where_clause = "WHERE visibility_statute_mi IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
+        SELECT 
+            CASE 
+                WHEN visibility_statute_mi < 1 THEN '< 1 mi'
+                WHEN visibility_statute_mi >= 1 AND visibility_statute_mi < 3 THEN '1-3 mi'
+                WHEN visibility_statute_mi >= 3 AND visibility_statute_mi < 5 THEN '3-5 mi'
+                WHEN visibility_statute_mi >= 5 AND visibility_statute_mi < 10 THEN '5-10 mi'
+                ELSE '>= 10 mi'
+            END as visibility_range,
+            COUNT(*)::int as count,
+            MIN(visibility_statute_mi) as min_vis
+        FROM metar
+        {where_clause}
+        GROUP BY 
+            CASE 
+                WHEN visibility_statute_mi < 1 THEN '< 1 mi'
+                WHEN visibility_statute_mi >= 1 AND visibility_statute_mi < 3 THEN '1-3 mi'
+                WHEN visibility_statute_mi >= 3 AND visibility_statute_mi < 5 THEN '3-5 mi'
+                WHEN visibility_statute_mi >= 5 AND visibility_statute_mi < 10 THEN '5-10 mi'
+                ELSE '>= 10 mi'
+            END
+        ORDER BY min_vis
+    """
+    return execute_query(query)
+
+@app.get("/meteo/visibility-timeline")
+def get_visibility_timeline(date_start: str = None, date_end: str = None):
+    """
+    Evolution de la visibilite moyenne par jour
+    
+    
+    
+    
+    """
+    where_clause = "WHERE visibility_statute_mi IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
+        SELECT 
+            observation_time::date as date,
+            ROUND(AVG(visibility_statute_mi)::numeric, 2) as avg_visibility,
+            COUNT(*)::int as observations
+        FROM metar
+        {where_clause}
+        GROUP BY observation_time::date
+        ORDER BY date
+    """
+    return execute_query(query)
+
+@app.get("/meteo/temperature-stats")
+def get_temperature_stats(date_start: str = None, date_end: str = None):
+    """
+    Evolution temperature et point de rosee par jour
+    
+    
+    
+    
+    """
+    where_clause = "WHERE temp_c IS NOT NULL AND dewpoint_c IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
+        SELECT 
+            observation_time::date as date,
+            ROUND(AVG(temp_c)::numeric, 2) as avg_temp,
+            ROUND(AVG(dewpoint_c)::numeric, 2) as avg_dewpoint,
+            COUNT(*)::int as observations
+        FROM metar
+        {where_clause}
+        GROUP BY observation_time::date
+        ORDER BY date
+    """
+    return execute_query(query)
+
+@app.get("/meteo/wind-stats")
+def get_wind_stats(date_start: str = None, date_end: str = None):
+    where_clause = "WHERE wind_speed_kt IS NOT NULL"
+    if date_start:
+        where_clause += f" AND observation_time::date >= '{date_start}'::date"
+    if date_end:
+        where_clause += f" AND observation_time::date <= '{date_end}'::date"
+    
+    query = f"""
+        SELECT 
+            CASE 
+                WHEN wind_speed_kt < 5 THEN '< 5 kt'
+                WHEN wind_speed_kt >= 5 AND wind_speed_kt < 10 THEN '5-10 kt'
+                WHEN wind_speed_kt >= 10 AND wind_speed_kt < 15 THEN '10-15 kt'
+                WHEN wind_speed_kt >= 15 AND wind_speed_kt < 20 THEN '15-20 kt'
+                WHEN wind_speed_kt >= 20 AND wind_speed_kt < 25 THEN '20-25 kt'
+                ELSE '>= 25 kt'
+            END as wind_range,
+            COUNT(*)::int as count,
+            MIN(wind_speed_kt) as min_wind
+        FROM metar
+        {where_clause}
+        GROUP BY 
+            CASE 
+                WHEN wind_speed_kt < 5 THEN '< 5 kt'
+                WHEN wind_speed_kt >= 5 AND wind_speed_kt < 10 THEN '5-10 kt'
+                WHEN wind_speed_kt >= 10 AND wind_speed_kt < 15 THEN '10-15 kt'
+                WHEN wind_speed_kt >= 15 AND wind_speed_kt < 20 THEN '15-20 kt'
+                WHEN wind_speed_kt >= 20 AND wind_speed_kt < 25 THEN '20-25 kt'
+                ELSE '>= 25 kt'
+            END
+        ORDER BY min_wind
     """
     return execute_query(query)
 
