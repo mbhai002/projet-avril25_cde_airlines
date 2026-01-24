@@ -39,6 +39,8 @@ models:
       - name: iata_code
         tests: 
           - unique
+      - name: city
+        description: "Ville ou municipalité de l'aéroport"
       - name: iso_country
         tests:
           - relationships:

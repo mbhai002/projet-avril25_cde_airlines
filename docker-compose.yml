@@ -87,7 +87,7 @@ services:
 
   # Service pgAdmin
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:8.6
     container_name: airlines_pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com

@@ -18,6 +18,7 @@ WITH source AS (
       oa.iata_code,
       oa.gps_code,
       oa.local_code,
+      COALESCE(ofl.city, oa.municipality) AS city,
       CASE WHEN ofl.timezone='\\N' THEN NULL ELSE ofl.timezone END AS timezone,
       CASE WHEN ofl.gmt_offset='\\N' THEN NULL ELSE ofl.gmt_offset END AS gmt_offset
     FROM {{ ref('ourairports_airports') }} oa
