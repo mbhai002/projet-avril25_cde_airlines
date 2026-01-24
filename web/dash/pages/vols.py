@@ -1,6 +1,5 @@
 """
 Page Vols - Dashboard Principal
-Analyse des vols et predictions ML
 """
 
 import dash
@@ -180,6 +179,80 @@ layout = html.Div([
                                     ], width="auto"),
                                 ], className="mb-4"),
                                 
+                                dbc.Card([
+                                    dbc.CardHeader([
+                                        html.I(className="fas fa-filter me-2"),
+                                        html.Strong("Filtres avances")
+                                    ], className="bg-light"),
+                                    dbc.CardBody([
+                                        dbc.Row([
+                                            dbc.Col([
+                                                html.Label([
+                                                    html.I(className="fas fa-exclamation-triangle me-2"),
+                                                    "Niveau de risque"
+                                                ], className="fw-bold mb-2"),
+                                                dcc.Checklist(
+                                                    id='filter-risk-levels',
+                                                    options=[
+                                                        {'label': html.Span([
+                                                            html.I(className="fas fa-circle me-2", style={'color': '#27ae60'}),
+                                                            'LOW'
+                                                        ]), 'value': 'low'},
+                                                        {'label': html.Span([
+                                                            html.I(className="fas fa-circle me-2", style={'color': '#f39c12'}),
+                                                            'MEDIUM'
+                                                        ]), 'value': 'medium'},
+                                                        {'label': html.Span([
+                                                            html.I(className="fas fa-circle me-2", style={'color': '#e74c3c'}),
+                                                            'HIGH'
+                                                        ]), 'value': 'high'},
+                                                    ],
+                                                    value=[],
+                                                    inline=True,
+                                                    labelStyle={'display': 'inline-block', 'marginRight': '15px'}
+                                                )
+                                            ], width=12, md=5),
+                                            dbc.Col([
+                                                html.Label([
+                                                    html.I(className="fas fa-clock me-2"),
+                                                    "Type de vol"
+                                                ], className="fw-bold mb-2"),
+                                                dcc.Dropdown(
+                                                    id='filter-flight-type',
+                                                    options=[
+                                                        {'label': 'Tous les vols', 'value': 'all'},
+                                                        {'label': 'Vols retardes uniquement', 'value': 'delayed'},
+                                                        {'label': 'Prediction retard ML', 'value': 'predicted_delay'},
+                                                        {'label': 'Avec prediction ML', 'value': 'has_ml'}
+                                                    ],
+                                                    value='all',
+                                                    clearable=False
+                                                )
+                                            ], width=12, md=4),
+                                            dbc.Col([
+                                                html.Label([
+                                                    html.I(className="fas fa-hourglass-half me-2"),
+                                                    "Seuil retard (min)"
+                                                ], className="fw-bold mb-2"),
+                                                dcc.Dropdown(
+                                                    id='filter-delay-threshold',
+                                                    options=[
+                                                        {'label': '5 minutes', 'value': 5},
+                                                        {'label': '10 minutes', 'value': 10},
+                                                        {'label': '15 minutes', 'value': 15},
+                                                        {'label': '20 minutes', 'value': 20},
+                                                        {'label': '30 minutes', 'value': 30},
+                                                        {'label': '45 minutes', 'value': 45},
+                                                        {'label': '60 minutes', 'value': 60}
+                                                    ],
+                                                    value=10,
+                                                    clearable=False
+                                                )
+                                            ], width=12, md=3),
+                                        ], className="g-3")
+                                    ])
+                                ], className="mb-3"),
+                                
                                 html.Div(id='flights-table-container')
                             ], className="p-3")
                         ], label="Vue d'ensemble", tab_id="tab-overview", label_style={'fontSize': '16px'}),
@@ -195,7 +268,13 @@ layout = html.Div([
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
-                    dcc.Graph(id='vols-daily-chart', config={'displayModeBar': False})
+                    dcc.Graph(id='vols-daily-chart', config={'displayModeBar': False}),
+                    html.Hr(className="my-2"),
+                    html.Small([
+                        html.I(className="fas fa-calculator me-2 text-muted"),
+                        html.Strong("Calcul : "),
+                        "Taux retard = (Nombre vols retardes / Total vols) × 100"
+                    ], className="text-muted d-block text-center")
                 ])
             ], className="shadow-sm")
         ], width=8),
@@ -203,6 +282,36 @@ layout = html.Div([
             dbc.Card([
                 dbc.CardBody([
                     html.H5("Parametrage", className="mb-3"),
+                    
+                    html.Label([
+                        html.I(className="fas fa-calendar-alt me-2"),
+                        html.Strong("Periode d'analyse")
+                    ], className="mb-2"),
+                    dbc.Row([
+                        dbc.Col([
+                            dcc.DatePickerSingle(
+                                id='stats-date-start',
+                                date=(datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d'),
+                                display_format='DD/MM/YYYY',
+                                placeholder='Date debut',
+                                first_day_of_week=1,
+                                style={'width': '100%'}
+                            )
+                        ], width=6),
+                        dbc.Col([
+                            dcc.DatePickerSingle(
+                                id='stats-date-end',
+                                date=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
+                                display_format='DD/MM/YYYY',
+                                placeholder='Date fin',
+                                first_day_of_week=1,
+                                style={'width': '100%'}
+                            )
+                        ], width=6),
+                    ], className="g-2 mb-2"),
+                    html.Small("Par defaut: 20 derniers jours (S-1). Selectionnez 2 dates pour une periode", className="text-muted d-block mb-3"),
+                    
+                    html.Hr(className="my-3"),
                     html.Div(id='delay-threshold-display', className="text-primary fw-bold text-center mb-2"),
                     dcc.Slider(
                         id='delay-threshold-slider',
@@ -280,10 +389,19 @@ layout = html.Div([
     Output('vols-kpi-cards', 'children'),
     Output('vols-data-info', 'children'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_kpis(n, delay_threshold):
-    stats = fetch_api(f"/stats?delay_threshold={delay_threshold}")
+def update_kpis(n, delay_threshold, date_start, date_end):
+    endpoint = f"/stats?delay_threshold={delay_threshold}"
+    if date_start:
+        endpoint += f"&date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}"
+    
+    stats = fetch_api(endpoint)
     if not stats:
         return [], "Erreur connexion API"
     
@@ -321,10 +439,19 @@ def update_kpis(n, delay_threshold):
 @callback(
     Output('vols-daily-chart', 'figure'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_daily(n, delay_threshold):
-    data = fetch_api(f"/stats/daily?delay_threshold={delay_threshold}")
+def update_daily(n, delay_threshold, date_start, date_end):
+    endpoint = f"/stats/daily?delay_threshold={delay_threshold}"
+    if date_start:
+        endpoint += f"&date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -351,10 +478,19 @@ def update_daily(n, delay_threshold):
 @callback(
     Output('vols-hourly-chart', 'figure'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_hourly(n, delay_threshold):
-    data = fetch_api(f"/stats/hourly?delay_threshold={delay_threshold}")
+def update_hourly(n, delay_threshold, date_start, date_end):
+    endpoint = f"/stats/hourly?delay_threshold={delay_threshold}"
+    if date_start:
+        endpoint += f"&date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -382,10 +518,19 @@ def update_hourly(n, delay_threshold):
 @callback(
     Output('vols-airlines-chart', 'figure'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_airlines(n, delay_threshold):
-    data = fetch_api(f"/stats/airlines?delay_threshold={delay_threshold}&top=15")
+def update_airlines(n, delay_threshold, date_start, date_end):
+    endpoint = f"/stats/airlines?delay_threshold={delay_threshold}&top=15"
+    if date_start:
+        endpoint += f"&date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -413,10 +558,19 @@ def update_airlines(n, delay_threshold):
 @callback(
     Output('vols-ml-confusion', 'figure'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_ml_confusion(n, delay_threshold):
-    data = fetch_api(f"/ml/confusion?delay_threshold={delay_threshold}")
+def update_ml_confusion(n, delay_threshold, date_start, date_end):
+    endpoint = f"/ml/confusion?delay_threshold={delay_threshold}"
+    if date_start:
+        endpoint += f"&date_start={date_start}"
+    if date_end:
+        endpoint += f"&date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -440,10 +594,21 @@ def update_ml_confusion(n, delay_threshold):
 
 @callback(
     Output('vols-ml-risk', 'figure'),
-    Input('interval-vols', 'n_intervals')
+    Input('interval-vols', 'n_intervals'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_ml_risk(n):
-    data = fetch_api("/ml/risk-distribution")
+def update_ml_risk(n, date_start, date_end):
+    endpoint = "/ml/risk-distribution"
+    if date_start:
+        endpoint += f"?date_start={date_start}"
+        if date_end:
+            endpoint += f"&date_end={date_end}"
+    elif date_end:
+        endpoint += f"?date_end={date_end}"
+    
+    data = fetch_api(endpoint)
     if not data:
         return go.Figure()
     
@@ -477,13 +642,22 @@ def update_threshold_display(value):
 @callback(
     Output('vols-insights', 'children'),
     Input('interval-vols', 'n_intervals'),
-    Input('delay-threshold-slider', 'value')
+    Input('delay-threshold-slider', 'value'),
+    Input('stats-date-start', 'date'),
+    Input('stats-date-end', 'date'),
+    prevent_initial_call=False
 )
-def update_insights(n, delay_threshold):
-    stats = fetch_api(f"/stats?delay_threshold={delay_threshold}")
-    hourly = fetch_api(f"/stats/hourly?delay_threshold={delay_threshold}")
-    airlines = fetch_api(f"/stats/airlines?delay_threshold={delay_threshold}&top=15")
-    daily = fetch_api(f"/stats/daily?delay_threshold={delay_threshold}")
+def update_insights(n, delay_threshold, date_start, date_end):
+    date_params = ""
+    if date_start:
+        date_params += f"&date_start={date_start}"
+    if date_end:
+        date_params += f"&date_end={date_end}"
+    
+    stats = fetch_api(f"/stats?delay_threshold={delay_threshold}{date_params}")
+    hourly = fetch_api(f"/stats/hourly?delay_threshold={delay_threshold}{date_params}")
+    airlines = fetch_api(f"/stats/airlines?delay_threshold={delay_threshold}&top=15{date_params}")
+    daily = fetch_api(f"/stats/daily?delay_threshold={delay_threshold}{date_params}")
     if not stats or not hourly or not airlines or not daily:
         return html.P("Insights indisponibles (API non joignable)", className="text-muted mb-0")
     
@@ -551,11 +725,17 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
         )
     
     for flight in flights:
-        flight['delay_min'] = flight.get('delay_min') if flight.get('delay_min') is not None else 'N/A'
+        delay = flight.get('delay_min')
+        flight['delay_min'] = int(round(delay)) if delay is not None else 'N/A'
         flight['delay_prob_pct'] = f"{flight.get('delay_prob', 0)*100:.1f}%" if flight.get('delay_prob') else 'N/A'
         risk_level = flight.get('delay_risk_level')
         flight['risk'] = risk_level.upper() if risk_level else 'N/A'
-        flight['prediction'] = flight.get('prediction_retard', 'N/A')
+        
+        visibility = flight.get('dep_visibility_mi')
+        flight['visibility'] = f"{visibility:.1f} mi" if visibility is not None else 'N/A'
+        
+        flight_cat = flight.get('dep_flight_category')
+        flight['meteo_cat'] = flight_cat.upper() if flight_cat else 'N/A'
     
     columns = [
         {"name": "Vol", "id": "flight_number"},
@@ -566,9 +746,10 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
         {"name": "Arrivee prevue", "id": "arrival_scheduled_utc"},
         {"name": "Arrivee reelle", "id": "arrival_actual_utc"},
         {"name": "Retard (min)", "id": "delay_min"},
+        {"name": "Visibilite", "id": "visibility"},
+        {"name": "Meteo", "id": "meteo_cat"},
         {"name": "Probabilite", "id": "delay_prob_pct"},
         {"name": "Risque", "id": "risk"},
-        {"name": "Prediction", "id": "prediction"},
     ]
     
     style_data_conditional = [
@@ -587,18 +768,6 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
             'backgroundColor': '#f8d7da',
             'color': '#721c24'
         },
-        {
-            'if': {'filter_query': '{prediction} = "OUI"', 'column_id': 'prediction'},
-            'backgroundColor': '#dc3545',
-            'color': 'white',
-            'fontWeight': 'bold'
-        },
-        {
-            'if': {'filter_query': '{prediction} = "NON"', 'column_id': 'prediction'},
-            'backgroundColor': '#28a745',
-            'color': 'white',
-            'fontWeight': 'bold'
-        },
     ]
     
     return html.Div([
@@ -607,6 +776,29 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
             html.Strong(f"{len(flights)} vol(s) trouve(s)"),
             f" pour {flight_number}" + (f" le {departure_date}" if departure_date else "")
         ], color="success", className="d-flex align-items-center"),
+        
+        dbc.Alert([
+            html.Div([
+                html.Strong([html.I(className="fas fa-cloud me-2"), "Légende Météo : "]),
+                html.Span([
+                    html.Span("VFR", className="badge me-2", style={'backgroundColor': '#d4edda', 'color': '#155724'}),
+                    html.Span("Très bonnes conditions", className="me-3 small"),
+                    html.Span("MVFR", className="badge me-2", style={'backgroundColor': '#cfe2ff', 'color': '#084298'}),
+                    html.Span("Conditions marginales", className="me-3 small"),
+                    html.Span("IFR", className="badge me-2", style={'backgroundColor': '#f8d7da', 'color': '#721c24'}),
+                    html.Span("Conditions difficiles", className="me-3 small"),
+                    html.Span("LIFR", className="badge me-2", style={'backgroundColor': '#842029', 'color': 'white'}),
+                    html.Span("Très mauvaises conditions", className="small"),
+                ]),
+                html.Br(),
+                html.Small([
+                    html.I(className="fas fa-info-circle me-2"),
+                    html.Strong("Note : "),
+                    "La colonne 'Retard (min)' affiche le retard réel uniquement pour les vols passés (déjà arrivés)."
+                ], className="text-muted")
+            ])
+        ], color="light", className="mb-2 py-2"),
+        
         dbc.Card([
             dbc.CardBody([
                 dash_table.DataTable(
@@ -646,9 +838,12 @@ def search_specific_flight(n_clicks, flight_number, departure_date):
     Input('btn-load-flights', 'n_clicks'),
     Input('date-start-overview', 'date'),
     Input('date-end-overview', 'date'),
+    Input('filter-risk-levels', 'value'),
+    Input('filter-flight-type', 'value'),
+    Input('filter-delay-threshold', 'value'),
     prevent_initial_call=False
 )
-def update_date_range_and_load_flights(btn_today, btn_week, btn_month, btn_full, btn_load, date_start, date_end):
+def update_date_range_and_load_flights(btn_today, btn_week, btn_month, btn_full, btn_load, date_start, date_end, risk_levels, flight_type, delay_threshold):
     ctx = dash.callback_context
     
     if not ctx.triggered or ctx.triggered[0]['prop_id'] == '.':
@@ -665,13 +860,13 @@ def update_date_range_and_load_flights(btn_today, btn_week, btn_month, btn_full,
     if button_id == 'btn-today':
         new_start = today.strftime('%Y-%m-%d')
         new_end = today.strftime('%Y-%m-%d')
-        return new_start, new_end, load_flights_data(new_start, new_end)
+        return new_start, new_end, load_flights_data(new_start, new_end, risk_levels, flight_type, delay_threshold)
     elif button_id == 'btn-this-week':
         start_week = today - timedelta(days=today.weekday())
         end_week = start_week + timedelta(days=6)
         new_start = start_week.strftime('%Y-%m-%d')
         new_end = end_week.strftime('%Y-%m-%d')
-        return new_start, new_end, load_flights_data(new_start, new_end)
+        return new_start, new_end, load_flights_data(new_start, new_end, risk_levels, flight_type, delay_threshold)
     elif button_id == 'btn-this-month':
         start_month = today.replace(day=1)
         if today.month == 12:
@@ -680,13 +875,13 @@ def update_date_range_and_load_flights(btn_today, btn_week, btn_month, btn_full,
             end_month = (today.replace(month=today.month+1, day=1) - timedelta(days=1))
         new_start = start_month.strftime('%Y-%m-%d')
         new_end = end_month.strftime('%Y-%m-%d')
-        return new_start, new_end, load_flights_data(new_start, new_end)
+        return new_start, new_end, load_flights_data(new_start, new_end, risk_levels, flight_type, delay_threshold)
     elif button_id == 'btn-full-period':
         start_full = today - timedelta(weeks=2)
         end_full = today + timedelta(weeks=4)
         new_start = start_full.strftime('%Y-%m-%d')
         new_end = end_full.strftime('%Y-%m-%d')
-        return new_start, new_end, load_flights_data(new_start, new_end)
+        return new_start, new_end, load_flights_data(new_start, new_end, risk_levels, flight_type, delay_threshold)
     elif button_id == 'btn-load-flights':
         if not date_start:
             return dash.no_update, dash.no_update, dbc.Alert([
@@ -695,16 +890,32 @@ def update_date_range_and_load_flights(btn_today, btn_week, btn_month, btn_full,
             ], color="warning")
         
         end_to_use = date_end if date_end else date_start
-        return dash.no_update, dash.no_update, load_flights_data(date_start, end_to_use)
-    elif button_id in ['date-start-overview', 'date-end-overview']:
+        return dash.no_update, dash.no_update, load_flights_data(date_start, end_to_use, risk_levels, flight_type, delay_threshold)
+    elif button_id in ['date-start-overview', 'date-end-overview', 'filter-risk-levels', 'filter-flight-type', 'filter-delay-threshold']:
         if date_start:
             end_to_use = date_end if date_end else date_start
-            return dash.no_update, dash.no_update, load_flights_data(date_start, end_to_use)
+            return dash.no_update, dash.no_update, load_flights_data(date_start, end_to_use, risk_levels, flight_type, delay_threshold)
     
     return dash.no_update, dash.no_update, dash.no_update
 
-def load_flights_data(date_start, date_end):
-    flights = fetch_api(f"/search-flights?date_start={date_start}&date_end={date_end}")
+def load_flights_data(date_start, date_end, risk_levels=None, flight_type='all', delay_threshold=None):
+    params = [f"date_start={date_start}", f"date_end={date_end}"]
+    
+    if risk_levels and len(risk_levels) > 0:
+        params.append(f"risk_levels={','.join(risk_levels)}")
+    
+    if flight_type == 'delayed':
+        params.append("delayed_only=true")
+    elif flight_type == 'predicted_delay':
+        params.append("predicted_delay_only=true")
+    elif flight_type == 'has_ml':
+        params.append("has_ml_prediction=true")
+    
+    if delay_threshold:
+        params.append(f"delay_min_threshold={delay_threshold}")
+    
+    query_string = "&".join(params)
+    flights = fetch_api(f"/search-flights?{query_string}")
     
     if not flights or len(flights) == 0:
         return dbc.Alert([
@@ -713,11 +924,17 @@ def load_flights_data(date_start, date_end):
         ], color="info")
     
     for flight in flights:
-        flight['delay_min'] = flight.get('delay_min') if flight.get('delay_min') is not None else 'N/A'
+        delay = flight.get('delay_min')
+        flight['delay_min'] = int(round(delay)) if delay is not None else 'N/A'
         flight['delay_prob_pct'] = f"{flight.get('delay_prob', 0)*100:.1f}%" if flight.get('delay_prob') else 'N/A'
         risk_level = flight.get('delay_risk_level')
         flight['risk'] = risk_level.upper() if risk_level else 'N/A'
-        flight['prediction'] = flight.get('prediction_retard', 'N/A')
+        
+        visibility = flight.get('dep_visibility_mi')
+        flight['visibility'] = f"{visibility:.1f} mi" if visibility is not None else 'N/A'
+        
+        flight_cat = flight.get('dep_flight_category')
+        flight['meteo_cat'] = flight_cat.upper() if flight_cat else 'N/A'
     
     columns = [
         {"name": "Vol", "id": "flight_number"},
@@ -728,9 +945,10 @@ def load_flights_data(date_start, date_end):
         {"name": "Arrivee prevue", "id": "arrival_scheduled_utc"},
         {"name": "Arrivee reelle", "id": "arrival_actual_utc"},
         {"name": "Retard (min)", "id": "delay_min"},
+        {"name": "Visibilite", "id": "visibility"},
+        {"name": "Meteo", "id": "meteo_cat"},
         {"name": "Probabilite", "id": "delay_prob_pct"},
         {"name": "Risque", "id": "risk"},
-        {"name": "Prediction", "id": "prediction"},
     ]
     
     style_data_conditional = [
@@ -750,21 +968,33 @@ def load_flights_data(date_start, date_end):
             'color': '#721c24'
         },
         {
-            'if': {'filter_query': '{prediction} = "OUI"', 'column_id': 'prediction'},
-            'backgroundColor': '#dc3545',
-            'color': 'white',
+            'if': {'filter_query': '{meteo_cat} = "VFR"', 'column_id': 'meteo_cat'},
+            'backgroundColor': '#d4edda',
+            'color': '#155724',
             'fontWeight': 'bold'
         },
         {
-            'if': {'filter_query': '{prediction} = "NON"', 'column_id': 'prediction'},
-            'backgroundColor': '#28a745',
+            'if': {'filter_query': '{meteo_cat} = "MVFR"', 'column_id': 'meteo_cat'},
+            'backgroundColor': '#cfe2ff',
+            'color': '#084298',
+            'fontWeight': 'bold'
+        },
+        {
+            'if': {'filter_query': '{meteo_cat} = "IFR"', 'column_id': 'meteo_cat'},
+            'backgroundColor': '#f8d7da',
+            'color': '#721c24',
+            'fontWeight': 'bold'
+        },
+        {
+            'if': {'filter_query': '{meteo_cat} = "LIFR"', 'column_id': 'meteo_cat'},
+            'backgroundColor': '#842029',
             'color': 'white',
             'fontWeight': 'bold'
         },
     ]
     
-    total_with_prediction = sum(1 for f in flights if f.get('prediction') not in ['N/A', None])
-    total_delayed_predicted = sum(1 for f in flights if f.get('prediction') == 'OUI')
+    total_with_prediction = sum(1 for f in flights if f.get('delay_prob') is not None)
+    total_delayed_predicted = sum(1 for f in flights if f.get('delay_prob', 0) > 0.5)
     
     total_in_db = fetch_api("/stats")
     total_db_count = total_in_db.get('total_flights', 0) if total_in_db else 0
@@ -822,6 +1052,29 @@ def load_flights_data(date_start, date_end):
                 ], className="border-success")
             ], width=6, lg=3),
         ], className="g-3 mb-3"),
+        
+        dbc.Alert([
+            html.Div([
+                html.Strong([html.I(className="fas fa-cloud me-2"), "Légende Météo : "]),
+                html.Span([
+                    html.Span("VFR", className="badge me-2", style={'backgroundColor': '#d4edda', 'color': '#155724'}),
+                    html.Span("Très bonnes conditions (>5mi visibilité, >3000ft plafond)", className="me-3 small"),
+                    html.Span("MVFR", className="badge me-2", style={'backgroundColor': '#cfe2ff', 'color': '#084298'}),
+                    html.Span("Conditions marginales (3-5mi, 1000-3000ft)", className="me-3 small"),
+                    html.Span("IFR", className="badge me-2", style={'backgroundColor': '#f8d7da', 'color': '#721c24'}),
+                    html.Span("Conditions difficiles (1-3mi, 500-1000ft)", className="me-3 small"),
+                    html.Span("LIFR", className="badge me-2", style={'backgroundColor': '#842029', 'color': 'white'}),
+                    html.Span("Très mauvaises conditions (<1mi, <500ft)", className="small"),
+                ]),
+                html.Br(),
+                html.Small([
+                    html.I(className="fas fa-info-circle me-2"),
+                    html.Strong("Note : "),
+                    "La colonne 'Retard (min)' affiche le retard réel uniquement pour les vols passés (déjà arrivés)."
+                ], className="text-muted")
+            ])
+        ], color="light", className="mb-3 py-2"),
+        
         dbc.Card([
             dbc.CardHeader([
                 html.I(className="fas fa-table me-2"),

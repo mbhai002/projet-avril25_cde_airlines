@@ -1,6 +1,6 @@
 """
-Application Dashboard Multi-Pages - DST Airlines
-Pages: Vols, Meteo, Analyses
+Dashboard DST Airlines
+Pages: Vols, Meteo
 """
 
 import dash
@@ -31,7 +31,6 @@ navbar = dbc.Navbar(
                 dbc.Nav([
                     dbc.NavItem(dbc.NavLink("Vols", href="/", active="exact")),
                     dbc.NavItem(dbc.NavLink("Meteo", href="/meteo", active="exact")),
-                    dbc.NavItem(dbc.NavLink("Analyses", href="/analyses", active="exact")),
                 ], navbar=True)
             ])
         ], className="g-0 ms-auto flex-nowrap mt-3 mt-md-0", align="center"),
