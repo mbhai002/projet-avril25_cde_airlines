@@ -89,23 +89,12 @@ def create_my_config() -> CollectionConfig:
         
         # PostgreSQL  
         postgresql_uri="postgresql://user:pass@localhost:5433/dst",
-        enable_postgresql_insertion=True,
         
         # Collecte
         num_airports=200,           # Nombre d'aéroports à traiter
         delay=1.5,                  # Délai entre requêtes (secondes)
         hour_offset=1,              # Vols temps réel : +1h
         past_hour_offset=-20,       # Vols passés : -20h
-        
-        # Comportement
-        run_once=True,              # True = une fois, False = boucle
-        collect_realtime=True,      # Collecte vols temps réel
-        collect_past=False,         # Collecte vols passés
-        enable_weather=True,    # Collecte météo
-        
-        # Scheduling (mode boucle)
-        schedule_minute=5,          # Exécution à XX:05
-        loop_interval_minutes=60    # Toutes les 60 minutes
     )
 ```
 
@@ -220,29 +209,7 @@ python reset_environment.py
 
 ### **Modes d'Exécution**
 
-#### **Mode Une Fois (Défaut)**
-```python
-# Dans main.py
-run_once=True
-collect_realtime=True
-collect_past=False      # Optionnel
-```
-**Résultat** : Une collecte complète puis arrêt
-
-#### **Mode Boucle**
-```python
-# Dans main.py  
-run_once=False
-schedule_minute=5       # XX:05
-loop_interval_minutes=60
-```
-**Résultat** : Collecte toutes les heures à XX:05
-
-#### **Collecte Vols Passés**
-```python
-collect_past=True       # Active l'étape 3
-```
-**Important** : Nécessite une session de vols temps réel d'abord
+L'orchestration est désormais gérée de manière externe (par Airflow) ou par une exécution complète et unique du script principal.
 
 ## 📊 Session Management
 

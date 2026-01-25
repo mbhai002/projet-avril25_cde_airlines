@@ -31,25 +31,20 @@ class CollectionConfig:
     database_name: str = os.getenv("MONGODB_DATABASE", "airlines_db")
 
     # PostgreSQL (Docker)
-    enable_postgresql_insertion: bool = str_to_bool(os.getenv("ENABLE_POSTGRESQL_INSERTION", "true"))
     postgresql_uri: str = os.getenv("POSTGRESQL_URI", "postgresql://postgres:postgres@localhost:5432/airlines_db")
     
     # Machine Learning
     ml_model_dir: str = os.getenv("ML_MODEL_DIR", "machine_learning/model_output")
     ml_model_config_path: str = None
-    enable_ml_prediction: bool = str_to_bool(os.getenv("ENABLE_ML_PREDICTION", "true"))
     
     # Collecte
     num_airports: int = int(os.getenv("NUM_AIRPORTS", "200"))
     delay: float = float(os.getenv("DELAY", "1.5"))
     batch_size: int = int(os.getenv("BATCH_SIZE", "500"))
-    enable_weather: bool = str_to_bool(os.getenv("ENABLE_WEATHER", "true"))
     hour_offset: int = int(os.getenv("HOUR_OFFSET", "1"))
     past_hour_offset: int = int(os.getenv("PAST_HOUR_OFFSET", "-20"))
     
     # Comportement d'exécution
-    collect_realtime: bool = str_to_bool(os.getenv("COLLECT_REALTIME", "true"))
-    collect_past: bool = str_to_bool(os.getenv("COLLECT_PAST", "false"))
     
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

@@ -1124,7 +1124,7 @@ cd projet-avril25_cde_airlines-dockerisation
 # Edit .env file
 nano .env
 
-# Make changes (e.g., NUM_AIRPORTS, ENABLE_WEATHER)
+# Make changes (e.g., NUM_AIRPORTS)
 # Save: Ctrl+X, Y, Enter
 
 # Restart affected services
@@ -1229,7 +1229,7 @@ A: SSH into server, run `docker-compose down`
 A: SSH into server, run `docker-compose up -d`
 
 **Q: Can I change collection frequency?**
-A: Yes, edit LOOP_INTERVAL_MINUTES in .env file
+A: Yes, modify the DAG schedule in Airflow (`airflow/dags/flight_collection_dag.py`)
 
 **Q: How do I add more airports?**
 A: Increase NUM_AIRPORTS in .env (max depends on source data availability)
@@ -1261,15 +1261,6 @@ A:
 1. Update docker-compose.yml (service environment variables)
 2. Update .env file (connection URIs)
 3. Recreate containers: `docker-compose down -v && docker-compose up -d`
-
-**Q: How do I disable weather collection?**
-A: Set `ENABLE_WEATHER=false` in .env and restart flight-collector
-
-**Q: Can I collect only real-time data (no historical)?**
-A: Set `COLLECT_PAST=false` in .env
-
-**Q: How do I run collection only once (testing)?**
-A: Set `RUN_ONCE=true` in .env
 
 **Q: Where are logs stored?**
 A: Docker container logs. View with `docker-compose logs`

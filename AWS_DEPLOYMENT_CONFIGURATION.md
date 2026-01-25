@@ -218,7 +218,6 @@ API_NINJAS_KEY=votre_cle_api_ninjas
 ```bash
 # ML Model Settings
 ML_MODEL_DIR=machine_learning/model_output
-ENABLE_ML_PREDICTION=true
 ```
 
 ### Data Collection Settings
@@ -228,7 +227,6 @@ ENABLE_ML_PREDICTION=true
 NUM_AIRPORTS=200              # Number of airports to monitor
 DELAY=1.5                     # Delay between requests (seconds)
 BATCH_SIZE=500                # Records per batch
-ENABLE_WEATHER=true           # Collect METAR/TAF weather data
 HOUR_OFFSET=1                 # Future hours for real-time collection
 PAST_HOUR_OFFSET=-20          # Past hours for historical collection
 ```
@@ -237,17 +235,11 @@ PAST_HOUR_OFFSET=-20          # Past hours for historical collection
 
 ```bash
 # Behavior Configuration
-RUN_ONCE=false                     # false = continuous loop mode
-COLLECT_REALTIME=true              # Collect current/future flights
-COLLECT_PAST=true                  # Collect historical flights
-SCHEDULE_MINUTE=35                 # Execute at XX:35 each cycle
-LOOP_INTERVAL_MINUTES=60           # Cycle every 60 minutes
 ```
 
 **Scheduling Details:**
-- Runs every hour at minute 35 (e.g., 15:35, 16:35, 17:35)
-- Collects both real-time and historical data each cycle
-- Set RUN_ONCE=true for single execution (testing)
+- Runs every hour (managed by external scheduler)
+- Collects all data (real-time, weather, past) each cycle
 
 ### Logging Configuration
 
@@ -507,7 +499,6 @@ docker stats
 - Stop unnecessary services temporarily
 - Upgrade to t3.small (2GB RAM, ~$15/month)
 - Reduce NUM_AIRPORTS in .env
-- Set ENABLE_WEATHER=false
 
 #### 4. Port Already in Use
 

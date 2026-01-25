@@ -51,26 +51,19 @@ class FlightOrchestrator:
         )
         self.mongo_manager = MongoDBManager(config.mongodb_uri, config.database_name)
         
-        # Initialiser les collecteurs XML si activés
-        if config.enable_weather:
-            self.metar_collector = MetarCollector()
-            self.taf_collector = TafCollector()
-        else:
-            self.metar_collector = None
-            self.taf_collector = None
+        # Initialiser les collecteurs XML
+        self.metar_collector = MetarCollector()
+        self.taf_collector = TafCollector()
             
-        # Initialiser le gestionnaire PostgreSQL si activé
-        if config.enable_postgresql_insertion:
-            self.pg_manager = PostgreSQLManager(config.postgresql_uri)
-        else:
-            self.pg_manager = None
+        # Initialiser le gestionnaire PostgreSQL
+        self.pg_manager = PostgreSQLManager(config.postgresql_uri)
         
         # Flags pour éviter la création répétée des index
         self._indexes_created = False
         self._weather_indexes_created = False
         
         self.logger.info(f"FlightOrchestrator initialized - Database: {config.database_name}, "
-                        f"Collection: flight, Weather: {config.enable_weather}")
+                        f"Collection: flight")
 
     def _build_flights_filter(self, session_id: str, collection_type: str = "realtime_departures", 
                               exclude_operated_by: bool = True) -> dict:
@@ -458,12 +451,8 @@ class FlightOrchestrator:
             results.mongodb_connected = True
             
             # Collecte des données météo
-            if self.config.enable_weather:
-                self._collect_weather_data(results, session_id)
-                results.success = True
-            else:
-                self.logger.info("Collecte météo désactivée dans la configuration")
-                results.success = True
+            self._collect_weather_data(results, session_id)
+            results.success = True
             
         except Exception as e:
             error_msg = f"Erreur lors de la collecte météo: {e}"
@@ -1083,8 +1072,8 @@ class FlightOrchestrator:
         self.logger.info("=== ÉTAPE 6: INSERTION POSTGRESQL ===")
         self.logger.info(f"Session ID: {session_id}")
         
-        if not self.config.enable_postgresql_insertion or not self.pg_manager:
-            self.logger.warning("Insertion PostgreSQL désactivée")
+        if not self.pg_manager:
+            self.logger.warning("Gestionnaire PostgreSQL non initialisé")
             results.success = True
             return results
         
@@ -1194,8 +1183,8 @@ class FlightOrchestrator:
         self.logger.info("=== ÉTAPE 8: MISE À JOUR POSTGRESQL ===")
         self.logger.info(f"Session ID: {session_id}")
         
-        if not self.config.enable_postgresql_insertion or not self.pg_manager:
-            self.logger.warning("Insertion PostgreSQL désactivée")
+        if not self.pg_manager:
+            self.logger.warning("Gestionnaire PostgreSQL non initialisé")
             results.success = True
             return results
         
