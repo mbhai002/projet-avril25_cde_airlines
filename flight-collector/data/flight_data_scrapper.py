@@ -281,8 +281,8 @@ class FlightDataScraper:
             delay: Délai entre les requêtes pour éviter le rate limiting
             hour_offset: Décalage en heures par rapport à l'heure actuelle
                         Exemples: 1 = prochaine heure, 0 = heure actuelle, -1 = heure précédente
-                        Note: Si hour_offset=1 et que le serveur est en début d'heure (0-30 min), 
-                        on utilise 0 (heure actuelle) au lieu de 1.
+                        Note: Si le serveur est en début d'heure (0-30 min), 
+                        on retire 1h au décalage demandé (ex: 1 devient 0, -20 devient -21).
             ftp_config: Configuration FTP pour l'upload automatique des réponses brutes
                        Format: {
                            'host': 'ftp.example.com',
@@ -387,10 +387,10 @@ class FlightDataScraper:
             local_time = utc_now.astimezone(airport_tz)
             
             # Calculer l'heure cible avec le décalage spécifié
-            # Règle: Si le serveur est entre H:00 et H:30, on force H+0 si H+1 était demandé
+            # Règle: Si le serveur est entre H:00 et H:30, on décale l'offset de -1h (pour vols futurs et passés)
             effective_offset = hour_offset
-            if hour_offset == 1 and utc_now.minute < 30:
-                effective_offset = 0
+            if utc_now.minute < 30:
+                effective_offset -= 1
                 
             target_hour = local_time.replace(
                 minute=0, second=0, microsecond=0
