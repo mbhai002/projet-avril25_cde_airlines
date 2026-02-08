@@ -31,7 +31,8 @@ navbar = dbc.Navbar(
                 dbc.Nav([
                     dbc.NavItem(dbc.NavLink("Synthèse", href="/", active="exact")),
                     dbc.NavItem(dbc.NavLink("Exploration", href="/explorer", active="exact")),
-                    dbc.NavItem(dbc.NavLink("Suivi Vol & ML", href="/suivi", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Suivi Vol", href="/suivi", active="exact")),
+                    dbc.NavItem(dbc.NavLink("Modèle ML", href="/modele-ml", active="exact")),
                     dbc.NavItem(dbc.NavLink("Météo", href="/meteo", active="exact")),
                 ], navbar=True)
             ])

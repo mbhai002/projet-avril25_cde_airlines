@@ -178,6 +178,7 @@ services:
     volumes:
       - ./web/dash/app.py:/app/app.py
       - ./web/dash/pages:/app/pages
+      - ./flight-collector/machine_learning:/app/machine_learning
     environment:
       - API_URL=http://airlines_fastapi:8000
     networks:

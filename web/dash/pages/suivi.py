@@ -24,7 +24,7 @@ def fetch_api(endpoint):
 layout = html.Div([
     dbc.Row([
         dbc.Col([
-            html.H2([html.I(className="fas fa-plane-arrival me-3"), "Suivi Specifique & ML"], className="mb-4")
+            html.H2([html.I(className="fas fa-plane-arrival me-3"), "Suivi Specifique de Vol"], className="mb-4")
         ])
     ]),
     

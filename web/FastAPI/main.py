@@ -158,6 +158,13 @@ class RiskDistribution(BaseModel):
     delay_risk_level: str
     count: int
 
+class MLReliability(BaseModel):
+    risk_level: str
+    total_vols: int
+    vrais_retards: int
+    vols_a_l_heure: int
+    taux_retard_reel: float
+
 class MeteoStats(BaseModel):
     total_metar: int
     total_taf: int
@@ -458,6 +465,30 @@ def get_risk_distribution(date_start: str = None, date_end: str = None):
             END
     """
     return execute_query(query)
+
+@app.get("/ml/reliability", response_model=List[MLReliability])
+def get_ml_reliability(delay_threshold: int = 15):
+    """Analyse de fiabilite des niveaux de risque par rapport aux retards reels"""
+    query = f"""
+        SELECT 
+            delay_risk_level as risk_level,
+            COUNT(*)::int as total_vols,
+            SUM(CASE WHEN delay_min >= {delay_threshold} THEN 1 ELSE 0 END)::int as vrais_retards,
+            SUM(CASE WHEN delay_min < {delay_threshold} OR delay_min IS NULL THEN 1 ELSE 0 END)::int as vols_a_l_heure
+        FROM flight
+        WHERE delay_risk_level IS NOT NULL
+        GROUP BY delay_risk_level
+        ORDER BY 
+            CASE delay_risk_level
+                WHEN 'low' THEN 1
+                WHEN 'medium' THEN 2
+                WHEN 'high' THEN 3
+            END
+    """
+    results = execute_query(query)
+    for r in results:
+        r['taux_retard_reel'] = round((r['vrais_retards'] / r['total_vols'] * 100), 1) if r['total_vols'] > 0 else 0
+    return results
 
 @app.get("/meteo/stats", response_model=MeteoStats)
 def get_meteo_stats(date_start: str = None, date_end: str = None):
