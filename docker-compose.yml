@@ -11,6 +11,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: airlines_db
+      EXPORTER_PASSWORD: exporter
       # Variables pour l'import FTP (récupérées du .env)
       FTP_HOST: ${FTP_HOST}
       FTP_USER: ${FTP_USERNAME}
@@ -18,15 +19,20 @@ services:
       FTP_DIR: ${FTP_BACKUP_DIR:-/backup}
     ports:
       - "5432:5432"
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
     volumes:
       # Montage des scripts d'initialisation (ordre alphabétique)
       - ./database/00_init_airflow.sql:/docker-entrypoint-initdb.d/00_init_airflow.sql
+      - ./database/00_init_exporter.sh:/docker-entrypoint-initdb.d/00_init_exporter.sh
       - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
       - ./database/02_import_ftp.sh:/docker-entrypoint-initdb.d/02_import_ftp.sh
       # Volume persistant pour les données
       - postgresql_data:/var/lib/postgresql/data
     networks:
       - airlines_network
+      - observability_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
       interval: 10s
@@ -49,6 +55,7 @@ services:
       - mongodb_config:/data/configdb
     networks:
       - airlines_network
+      - observability_network
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -162,6 +169,7 @@ services:
       - DB_HOST=airlines_postgresql
     networks:
       - airlines_network
+      - observability_network
     depends_on:
       postgresql:
         condition: service_healthy
@@ -239,3 +247,7 @@ volumes:
 networks:
   airlines_network:
     driver: bridge
+    external: true
+  observability_network:
+    driver: bridge
+    external: true

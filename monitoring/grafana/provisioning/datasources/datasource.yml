@@ -1,0 +1,58 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+  - name: DS_PROMETHEUS
+    orgId: 1
+  - name: airlines-postgresql-DS
+    orgId: 1
+
+datasources:
+  # =========================
+  # Prometheus (principal)
+  # =========================
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  # =========================
+  # Alias Prometheus
+  # (sinon modifications à faire  dans des dashboards importés)
+  # =========================
+  - name: DS_PROMETHEUS
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    isDefault: false
+    editable: true
+
+  # =========================
+  # PostgreSQL
+  # =========================
+  - name: airlines-postgresql-DS
+    type: postgres
+    access: proxy
+    orgId: 1
+    url: airlines_postgresql:5432
+    database: airlines_db
+    user: postgres
+    isDefault: false
+    editable: true
+
+    secureJsonData:
+      password: ${POSTGRES_EXPORTER_PASSWORD}
+
+    jsonData:
+      sslmode: disable
+      version: "13"
+      timeInterval: "1m"
+      maxOpenConns: 100
+      maxIdleConns: 100
+      connMaxLifetime: 14400
+

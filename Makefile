@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs clean all dbt-prepare dbt-seed dbt-run dbt-all build web-build web-up web-down web-logs
+.PHONY: help up down restart logs clean all dbt-prepare dbt-seed dbt-run dbt-all build web-build web-up web-down web-logs all2 clean2 reset
 
 help:
 	@echo "Commandes disponibles:"
@@ -17,17 +17,26 @@ help:
 	@echo "  make web-down        - Arrête FastAPI et Dash"
 	@echo "  make web-logs        - Affiche les logs FastAPI et Dash"
 	@echo "  make all             - Démarre tout (services + pipeline DBT)"
+	@echo "  make all2            - Démarre tout + Monitoring"
+	@echo "  make clean2          - Nettoyage complet (App + Monitoring)"
+	@echo "  make reset           - Réinitialisation totale (clean2 + all2)"
+
+network:
+	
+	docker network inspect airlines_network >/dev/null 2>&1 || docker network create airlines_network
+	docker network inspect observability_network >/dev/null 2>&1 || docker network create observability_network
+
 
 build:
 	@echo "Reconstruction des images Docker..."
 	docker compose build --no-cache dbt dbt_prepare
 	@echo "Images reconstruites!"
 
-up:
+up: network
 	@echo "Démarrage de tous les services..."
 	@mkdir -p flight-collector/data/metar flight-collector/data/taf flight-collector/logs
 	@chmod -R 775 flight-collector/data flight-collector/logs 2>/dev/null || true
-	docker compose up -d
+	docker compose up -d --build
 	@echo "Services démarrés!"
 
 down:
@@ -125,3 +134,14 @@ all:
 	@echo "Dashboard: http://localhost:8050"
 	@echo "MongoDB: localhost:27017"
 	@echo "pgAdmin: http://localhost:5050"
+
+all2:
+	@echo "=== Démarrage de la stack Monitoring ==="
+	@$(MAKE) -C monitoring all
+	@$(MAKE) all
+
+clean2: clean
+	@echo "=== Nettoyage de la stack Monitoring ==="
+	@$(MAKE) -C monitoring clean
+
+reset: clean2 all2

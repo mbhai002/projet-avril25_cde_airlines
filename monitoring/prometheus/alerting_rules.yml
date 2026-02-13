@@ -1,0 +1,15 @@
+groups:
+# Alerte permanente témoin à activer pour tests        
+#  - name: test-alerts
+#    rules:
+#      - alert: AlwaysFiring
+#        expr: vector(1)  # Ceci va toujours déclencher une alerte
+#        for: 1m
+#        labels:
+#          severity: critical
+#        annotations:
+#          summary: "Cette alerte est toujours active et sera envoyée à Alertmanager"
+  - name: my_first_alerting_rules_group
+    rules:
+      - alert: MyFirstAlert
+        expr: increase(nb_of_requests_total [1m]) > 20

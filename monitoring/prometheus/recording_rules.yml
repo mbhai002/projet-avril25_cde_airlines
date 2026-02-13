@@ -1,0 +1,9 @@
+groups:
+  - name: first_recording_rule_group
+    rules:
+      - record: my_first_recording_metric
+        expr: sum by (handler) (prometheus_http_requests_total)
+  - name: second_recording_rule_group
+    rules:
+      - record: my_third_recording_metric
+        expr: avg_over_time(prometheus_http_request_duration_seconds_bucket [20m])

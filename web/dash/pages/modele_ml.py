@@ -207,13 +207,7 @@ def layout():
                                     html.Li("Effets chaotiques : propagation des retards d'un vol précédent non capturée."),
                                     html.Li("Variables cachées : grèves, pannes techniques, météo temps réel ultra-locale."),
                                     html.Li("Plafond naturel : Pour ce type de problème, un ROC-AUC entre 0.70 et 0.80 est souvent le maximum réaliste sans données d'exploitation internes.")
-                                ], className="small"),
-
-                                html.H6("Philosophie du modèle :"),
-                                html.P([
-                                    "L'objectif n'est pas d'être un oracle, mais de fournir une ", html.B("probabilité indicative"), 
-                                    " stable. Il vaut mieux un modèle humble à 0.70 constant qu'un modèle 'magique' à 0.95 qui s'écroule à la moindre anomalie."
-                                ], className="small mb-0")
+                                ], className="small")
                             ], lg=8),
                             dbc.Col([
                                 html.Div([
@@ -221,7 +215,6 @@ def layout():
                                     html.Ul([
                                         html.Li("Régularisation plus forte (XGBoost alpha/lambda)"),
                                         html.Li("Ajout de proxys (trafic prévu, retards T-1)"),
-                                        html.Li("Validation temporelle stricte"),
                                         html.Li("Modèles spécialisés par route/compagnie")
                                     ], className="small")
                                 ], className="p-3 bg-light border rounded")

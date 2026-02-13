@@ -1,0 +1,74 @@
+services:
+  node_exporter:
+    image: prom/node-exporter
+    container_name: node_exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    ports:
+      - "9100:9100"
+    networks: [observability_network]
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    container_name: postgres_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://exporter:exporter_pwd@airlines_postgresql:5432/analytics?sslmode=disable"
+    ports:
+      - "9187:9187"
+    networks: [observability_network]
+
+  mongodb_exporter:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongodb_exporter
+    command:
+      - "--mongodb.uri=mongodb://exporter:password@airlines_mongodb:27017/admin"
+    ports:
+      - "9216:9216"
+    networks: [observability_network]
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [observability_network]
+
+  alertmanager:
+    image: prom/alertmanager
+    container_name: alertmanager
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+    ports:
+      - "9093:9093"
+    networks: [observability_network]
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [observability_network]
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  projet-avril25_cde_airlines_airlines_network:
+    external: true
+  observability_network:
+    external: true
+

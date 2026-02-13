@@ -1,0 +1,38 @@
+groups:
+  - name: fastapi-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="fastapi", status="5xx"}[1m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taux d'erreurs HTTP (5xx) trop élevé"
+          description: "Plus de 10% des requêtes HTTP ont échoué (5xx) sur les 2 dernières minutes."
+
+      - alert: HighRequestRate
+        expr: rate(http_requests_total{job="fastapi"}[1m]) > 50
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux de requêtes HTTP trop élevé"
+          description: "Plus de 50 requêtes par minute sur l'API FastAPI."
+
+      - alert: SlowRequestDuration
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="fastapi"}[5m])) by (le)) > 2
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Durée des requêtes trop longue"
+          description: "La durée des requêtes HTTP dépasse 2 secondes (percentile 95) sur les 5 dernières minutes."
+
+      - alert: NoFastAPIMetrics
+        expr: absent(http_requests_total{job="fastapi"})
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pas de métriques reçues de FastAPI"
+          description: "Aucune métrique `http_requests_total` reçue de FastAPI pendant 1 minute. Cela peut indiquer que l’application est arrêtée."
+

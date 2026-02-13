@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from datetime import date
 from decimal import Decimal
 import atexit
+from prometheus_fastapi_instrumentator import Instrumentator
 
 app = FastAPI(
     title="DST Airlines API",
@@ -44,6 +45,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+#Instrumentation Prometheus 
+Instrumentator().instrument(app).expose(app)
 
 # Connexion via DSN pour eviter les problemes d'encodage sur Windows
 # Utilise la variable d'environnement ou localhost par défaut
