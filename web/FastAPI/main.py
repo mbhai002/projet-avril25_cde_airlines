@@ -491,7 +491,7 @@ def get_ml_reliability(delay_threshold: int = 15):
     return results
 
 @app.get("/meteo/stats", response_model=MeteoStats)
-def get_meteo_stats(date_start: str = None, date_end: str = None):
+def get_meteo_stats(date_start: str = None, date_end: str = None, station: str = None):
     """
     Statistiques sur les donnees meteo METAR et TAF collectees
     
@@ -503,6 +503,9 @@ def get_meteo_stats(date_start: str = None, date_end: str = None):
     where_metar = "WHERE 1=1"
     where_taf = "WHERE 1=1"
     
+    if station:
+        where_metar += f" AND station_id = '{station}'"
+        where_taf += f" AND station_id = '{station}'"
     if date_start:
         where_metar += f" AND observation_time::date >= '{date_start}'::date"
         where_taf += f" AND issue_time::date >= '{date_start}'::date"
@@ -525,7 +528,7 @@ def get_meteo_stats(date_start: str = None, date_end: str = None):
     return execute_query_one(query)
 
 @app.get("/meteo/flight-categories", response_model=List[MeteoCondition])
-def get_flight_categories(date_start: str = None, date_end: str = None):
+def get_flight_categories(date_start: str = None, date_end: str = None, station: str = None):
     """
     Distribution des categories de vol selon les conditions meteo (VFR/IFR/MVFR/LIFR)
     
@@ -536,6 +539,8 @@ def get_flight_categories(date_start: str = None, date_end: str = None):
     
     """
     where_clause = "WHERE flight_category IS NOT NULL"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
@@ -554,7 +559,7 @@ def get_flight_categories(date_start: str = None, date_end: str = None):
     return execute_query(query)
 
 @app.get("/meteo/weather-conditions", response_model=List[MeteoCondition])
-def get_weather_conditions(date_start: str = None, date_end: str = None):
+def get_weather_conditions(date_start: str = None, date_end: str = None, station: str = None):
     """
     Top 20 des conditions meteorologiques observees (pluie/neige/brouillard/etc)
     
@@ -565,6 +570,8 @@ def get_weather_conditions(date_start: str = None, date_end: str = None):
     
     """
     where_clause = "WHERE wx_string IS NOT NULL OR wx_string = ''"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
@@ -616,7 +623,7 @@ def get_top_airports(limit: int = 20, date_start: str = None, date_end: str = No
     return execute_query(query)
 
 @app.get("/meteo/visibility-distribution")
-def get_visibility_distribution(date_start: str = None, date_end: str = None):
+def get_visibility_distribution(date_start: str = None, date_end: str = None, station: str = None):
     """
     Distribution des observations par plages de visibilite
     
@@ -625,6 +632,8 @@ def get_visibility_distribution(date_start: str = None, date_end: str = None):
     
     """
     where_clause = "WHERE visibility_statute_mi IS NOT NULL"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
@@ -656,7 +665,7 @@ def get_visibility_distribution(date_start: str = None, date_end: str = None):
     return execute_query(query)
 
 @app.get("/meteo/visibility-timeline")
-def get_visibility_timeline(date_start: str = None, date_end: str = None):
+def get_visibility_timeline(date_start: str = None, date_end: str = None, station: str = None):
     """
     Evolution de la visibilite moyenne par jour
     
@@ -665,6 +674,8 @@ def get_visibility_timeline(date_start: str = None, date_end: str = None):
     
     """
     where_clause = "WHERE visibility_statute_mi IS NOT NULL"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
@@ -683,7 +694,7 @@ def get_visibility_timeline(date_start: str = None, date_end: str = None):
     return execute_query(query)
 
 @app.get("/meteo/temperature-stats")
-def get_temperature_stats(date_start: str = None, date_end: str = None):
+def get_temperature_stats(date_start: str = None, date_end: str = None, station: str = None):
     """
     Evolution temperature et point de rosee par jour
     
@@ -692,6 +703,8 @@ def get_temperature_stats(date_start: str = None, date_end: str = None):
     
     """
     where_clause = "WHERE temp_c IS NOT NULL AND dewpoint_c IS NOT NULL"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
@@ -711,8 +724,10 @@ def get_temperature_stats(date_start: str = None, date_end: str = None):
     return execute_query(query)
 
 @app.get("/meteo/wind-stats")
-def get_wind_stats(date_start: str = None, date_end: str = None):
+def get_wind_stats(date_start: str = None, date_end: str = None, station: str = None):
     where_clause = "WHERE wind_speed_kt IS NOT NULL"
+    if station:
+        where_clause += f" AND station_id = '{station}'"
     if date_start:
         where_clause += f" AND observation_time::date >= '{date_start}'::date"
     if date_end:
