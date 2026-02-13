@@ -281,6 +281,8 @@ class FlightDataScraper:
             delay: Délai entre les requêtes pour éviter le rate limiting
             hour_offset: Décalage en heures par rapport à l'heure actuelle
                         Exemples: 1 = prochaine heure, 0 = heure actuelle, -1 = heure précédente
+                        Note: Si le serveur est en début d'heure (0-30 min), 
+                        on retire 1h au décalage demandé (ex: 1 devient 0, -20 devient -21).
             ftp_config: Configuration FTP pour l'upload automatique des réponses brutes
                        Format: {
                            'host': 'ftp.example.com',
@@ -385,9 +387,14 @@ class FlightDataScraper:
             local_time = utc_now.astimezone(airport_tz)
             
             # Calculer l'heure cible avec le décalage spécifié
+            # Règle: Si le serveur est entre H:00 et H:30, on décale l'offset de -1h (pour vols futurs et passés)
+            effective_offset = hour_offset
+            if utc_now.minute < 30:
+                effective_offset -= 1
+                
             target_hour = local_time.replace(
                 minute=0, second=0, microsecond=0
-            ) + timedelta(hours=hour_offset)
+            ) + timedelta(hours=effective_offset)
             
             # Formater la date et l'heure pour la requête
             date_str = target_hour.strftime("%Y-%m-%d")
@@ -396,7 +403,7 @@ class FlightDataScraper:
             self.logger.debug(f"{index + 1}/{total} - {iata_code} | "
                   f"Heure locale: {local_time.strftime('%H:%M')} | "
                   f"Heure cible: {shift}h | Date: {date_str} | "
-                  f"Offset: {hour_offset:+d}h")
+                  f"Offset: {effective_offset:+d}h (demandé: {hour_offset:+d}h)")
             
             # Faire la requête pour cette heure spécifique
             flights = self.fetch(
