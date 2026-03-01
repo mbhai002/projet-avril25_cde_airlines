@@ -85,7 +85,7 @@ with DAG(
     description='A complete workflow for airline data collection and processing',
     schedule_interval='35 * * * *', # Toutes les heures à la minute 35
     catchup=False,
-    is_paused_upon_creation=True,
+    is_paused_upon_creation=False,
     tags=['airlines', 'collection'],
 ) as dag:
 

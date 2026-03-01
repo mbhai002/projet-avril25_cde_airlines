@@ -126,14 +126,11 @@ all:
 	@$(MAKE) dbt-all
 	@echo ""
 	@echo "=== Projet complet démarré! ==="
-	@echo "PostgreSQL: localhost:5432"
-	@echo "MongoDB: localhost:27017"
-	@echo "pgAdmin: http://localhost:5050"
-	@echo "FastAPI: http://localhost:8000"
 	@echo "API Docs: http://localhost:8000/docs"
 	@echo "Dashboard: http://localhost:8050"
-	@echo "MongoDB: localhost:27017"
+	@echo "Airflow: http://localhost:8081"
 	@echo "pgAdmin: http://localhost:5050"
+	@echo "Grafana: http://localhost:3000"
 
 all2:
 	@echo "=== Démarrage de la stack Monitoring ==="
