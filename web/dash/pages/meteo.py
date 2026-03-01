@@ -499,13 +499,21 @@ layout = html.Div([
         ])
     ]),
 
+    # Banniere dynamique filtre actif
+    html.Div(id='meteo-filter-banner', className="mb-3"),
+
     # KPI Cards
     dbc.Row(id='meteo-kpi-cards', className="mb-4"),
 
-    # Section 1: Categories de vol + Conditions meteo
+    # =========================================================================
+    # PARTIE A : ANALYSE DETAILLEE (s'adapte au filtre aeroport)
+    # =========================================================================
+    html.Div(id='meteo-section-analysis-header', className="mb-2"),
+
+    # -- Conditions de Vol --
     dbc.Row([
         dbc.Col([
-            html.H4([
+            html.H5([
                 html.I(className="fas fa-plane-departure me-2", style={'color': '#3498db'}),
                 "Conditions de Vol"
             ], className="mb-3 mt-2")
@@ -540,45 +548,13 @@ layout = html.Div([
         ], width=6),
     ], className="mb-4"),
 
-    # Section 2: Analyse par Aeroport
+    # -- Visibilite --
     dbc.Row([
         dbc.Col([
-            html.H4([
-                html.I(className="fas fa-map-marker-alt me-2", style={'color': '#e67e22'}),
-                "Analyse par Aeroport"
-            ], className="mb-3 mt-4")
-        ])
-    ]),
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader([
-                    html.H5("Top Aeroports - Observations METAR", className="mb-0 d-inline"),
-                    dbc.Badge("Temp / Vent / Visibilite", color="warning", className="ms-2")
-                ]),
-                dbc.CardBody([
-                    dcc.Graph(id='meteo-top-airports', config={'displayModeBar': False})
-                ])
-            ], className="shadow-sm")
-        ], width=12),
-    ], className="mb-4"),
-
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader(html.H5("Detail Aeroports - Tableau Comparatif", className="mb-0")),
-                dbc.CardBody(id='meteo-airports-table')
-            ], className="shadow-sm")
-        ], width=12),
-    ], className="mb-4"),
-
-    # Section 3: Visibilite
-    dbc.Row([
-        dbc.Col([
-            html.H4([
+            html.H5([
                 html.I(className="fas fa-eye me-2", style={'color': '#1abc9c'}),
                 "Analyse Visibilite"
-            ], className="mb-3 mt-4"),
+            ], className="mb-3 mt-3"),
             html.P("La visibilite est mesuree en miles terrestres (statute miles). "
                    "Une visibilite < 3 mi impose le vol aux instruments (IFR).",
                    className="text-muted mb-3", style={'fontSize': '0.9rem'})
@@ -603,13 +579,13 @@ layout = html.Div([
         ], width=6),
     ], className="mb-4"),
 
-    # Section 4: Temperature & Vent
+    # -- Temperature & Vent --
     dbc.Row([
         dbc.Col([
-            html.H4([
+            html.H5([
                 html.I(className="fas fa-temperature-high me-2", style={'color': '#e74c3c'}),
                 "Temperature & Vent"
-            ], className="mb-3 mt-4"),
+            ], className="mb-3 mt-3"),
             html.P([
                 "Le ", html.Strong("point de rosee"),
                 " indique la temperature a laquelle la vapeur d'eau se condense. "
@@ -643,7 +619,7 @@ layout = html.Div([
         ], width=6),
     ], className="mb-4"),
 
-    # Section 5: Volume d'observations
+    # -- Volume d'observations --
     dbc.Row([
         dbc.Col([
             dbc.Card([
@@ -658,13 +634,90 @@ layout = html.Div([
         ], width=12),
     ], className="mb-4"),
 
-    # Section 6: Glossaire
+    # =========================================================================
+    # PARTIE B : CLASSEMENTS & COMPARAISONS (toujours global, avec mise en evidence)
+    # =========================================================================
     dbc.Row([
         dbc.Col([
+            html.Hr(style={'borderTop': '3px solid #e67e22', 'marginTop': '2rem'}),
+            html.H4([
+                html.I(className="fas fa-trophy me-2", style={'color': '#e67e22'}),
+                "Classements & Comparaisons entre Aeroports"
+            ], className="mb-2 mt-3"),
+            html.P([
+                html.I(className="fas fa-info-circle me-2", style={'color': '#3498db'}),
+                "Ces classements portent ",
+                html.Strong("toujours sur l'ensemble des aeroports"),
+                " pour la periode selectionnee. ",
+                "Si un aeroport est selectionne dans le filtre, il est ",
+                html.Span("mis en evidence", style={'color': '#e67e22', 'fontWeight': 'bold'}),
+                " dans les graphiques pour vous permettre de le situer par rapport aux autres."
+            ], className="text-muted mb-4", style={'fontSize': '0.9rem',
+                'backgroundColor': '#fef9e7', 'padding': '10px 15px',
+                'borderRadius': '6px', 'border': '1px solid #f9e79f'})
+        ])
+    ]),
+
+    # -- Top Aeroports --
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Top Aeroports - Observations METAR", className="mb-0 d-inline"),
+                    dbc.Badge("Temp / Vent / Visibilite", color="warning", className="ms-2")
+                ]),
+                dbc.CardBody([
+                    dcc.Graph(id='meteo-top-airports', config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=12),
+    ], className="mb-4"),
+
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader(html.H5("Detail Aeroports - Tableau Comparatif", className="mb-0")),
+                dbc.CardBody(id='meteo-airports-table')
+            ], className="shadow-sm")
+        ], width=12),
+    ], className="mb-4"),
+
+    # -- Classements Visibilite & Vent --
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Top Aeroports - Visibilite la plus faible", className="mb-0 d-inline"),
+                    dbc.Badge("Periode selectionnee", color="info", className="ms-2")
+                ]),
+                dbc.CardBody([
+                    dcc.Graph(id='meteo-top-visibility', config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=6),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Top Aeroports - Vent le plus fort", className="mb-0 d-inline"),
+                    dbc.Badge("Periode selectionnee", color="danger", className="ms-2")
+                ]),
+                dbc.CardBody([
+                    dcc.Graph(id='meteo-top-wind', config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=6),
+    ], className="mb-4"),
+
+    # =========================================================================
+    # GLOSSAIRE
+    # =========================================================================
+    dbc.Row([
+        dbc.Col([
+            html.Hr(style={'borderTop': '2px solid #9b59b6', 'marginTop': '2rem'}),
             html.H4([
                 html.I(className="fas fa-book-open me-2", style={'color': '#9b59b6'}),
                 "Reference & Glossaire"
-            ], className="mb-3 mt-4")
+            ], className="mb-3 mt-3")
         ])
     ]),
     build_glossary_section(),
@@ -698,6 +751,78 @@ def update_airport_dropdown(n, date_start, date_end):
             'value': icao
         })
     return options
+
+
+# --- Callback: Filter Banner ---
+@callback(
+    Output('meteo-filter-banner', 'children'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    Input('meteo-airport-filter', 'value'),
+    prevent_initial_call=False
+)
+def update_filter_banner(date_start, date_end, airport):
+    if airport:
+        label = get_airport_label(airport)
+        return dbc.Alert([
+            html.I(className="fas fa-filter me-2"),
+            html.Strong("Filtre actif : "),
+            html.Span(f"Aeroport {label}", style={'fontSize': '1rem'}),
+            html.Span(f"  |  Periode : {date_start or '...'} au {date_end or '...'}",
+                      className="ms-2 text-muted"),
+            html.Br(),
+            html.Small([
+                html.I(className="fas fa-info-circle me-1"),
+                "Les graphiques d'analyse ci-dessous montrent uniquement les donnees de cet aeroport. ",
+                "Les classements en bas de page restent globaux avec cet aeroport mis en evidence."
+            ], className="d-block mt-1")
+        ], color="info", className="mb-0 py-2",
+           style={'borderLeft': '5px solid #3498db'})
+    else:
+        return dbc.Alert([
+            html.I(className="fas fa-globe me-2"),
+            html.Strong("Vue globale : "),
+            html.Span("Tous les aeroports"),
+            html.Span(f"  |  Periode : {date_start or '...'} au {date_end or '...'}",
+                      className="ms-2 text-muted"),
+        ], color="light", className="mb-0 py-2 border",
+           style={'borderLeft': '5px solid #95a5a6'})
+
+
+# --- Callback: Analysis Section Header ---
+@callback(
+    Output('meteo-section-analysis-header', 'children'),
+    Input('meteo-airport-filter', 'value'),
+    prevent_initial_call=False
+)
+def update_analysis_header(airport):
+    if airport:
+        label = get_airport_label(airport)
+        return html.Div([
+            html.Hr(style={'borderTop': '3px solid #3498db', 'marginTop': '0.5rem'}),
+            html.H4([
+                html.I(className="fas fa-chart-line me-2", style={'color': '#3498db'}),
+                f"Analyse Detaillee — {label}"
+            ], className="mb-1 mt-2"),
+            html.P([
+                dbc.Badge("Filtre aeroport actif", color="info", className="me-2"),
+                "Tous les graphiques de cette section affichent les donnees de ",
+                html.Strong(label), " uniquement."
+            ], className="text-muted mb-3", style={'fontSize': '0.9rem'})
+        ])
+    else:
+        return html.Div([
+            html.Hr(style={'borderTop': '3px solid #3498db', 'marginTop': '0.5rem'}),
+            html.H4([
+                html.I(className="fas fa-chart-line me-2", style={'color': '#3498db'}),
+                "Analyse Detaillee — Tous les Aeroports"
+            ], className="mb-1 mt-2"),
+            html.P([
+                dbc.Badge("Vue globale", color="secondary", className="me-2"),
+                "Donnees agregees sur l'ensemble des aeroports. ",
+                "Selectionnez un aeroport dans le filtre pour isoler son analyse."
+            ], className="text-muted mb-3", style={'fontSize': '0.9rem'})
+        ])
 
 
 # --- Callback: KPI Cards ---
@@ -772,12 +897,13 @@ def update_flight_categories(n, date_start, date_end, airport):
             '<extra></extra>'
         )
     ))
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else " — Tous les aeroports"
     fig.update_layout(
-        title="Distribution des Categories de Vol",
+        title=f"Distribution des Categories de Vol{airport_suffix}",
         template='plotly_white',
         height=400,
         showlegend=True,
-        margin=dict(t=40, b=10)
+        margin=dict(t=50, b=10)
     )
 
     # Legend with explanations
@@ -861,8 +987,9 @@ def update_weather_conditions(n, date_start, date_end, airport):
             for i in range(len(top_data))
         ]
     ))
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Top 15 Phenomenes Meteo (codes METAR)",
+        title=f"Top 15 Phenomenes Meteo{airport_suffix}",
         xaxis_title="Nombre d'observations",
         template='plotly_white',
         height=500,
@@ -894,74 +1021,109 @@ def update_weather_conditions(n, date_start, date_end, airport):
     Input('interval-meteo', 'n_intervals'),
     Input('meteo-date-start', 'date'),
     Input('meteo-date-end', 'date'),
+    Input('meteo-airport-filter', 'value'),
     prevent_initial_call=False
 )
-def update_top_airports(n, date_start, date_end):
+def update_top_airports(n, date_start, date_end, airport):
     params = build_date_params(date_start, date_end)
     sep = '&' if params else '?'
-    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=20")
+    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=200")
     if not data:
         return go.Figure()
 
+    # Toujours afficher top 20 (global)
+    display_data = data[:20]
+
+    # Si un aeroport est selectionne et absent du top 20, l'ajouter
+    selected_in_top = False
+    if airport:
+        selected_in_top = any(d['airport'] == airport for d in display_data)
+        if not selected_in_top:
+            selected_entry = [d for d in data if d['airport'] == airport]
+            if selected_entry:
+                display_data.append(selected_entry[0])
+
     # Build labels with city names
-    airport_labels = [get_airport_label(d['airport']) for d in data]
+    airport_labels = [get_airport_label(d['airport']) for d in display_data]
     airport_hovers = []
-    for d in data:
+    for d in display_data:
         icao = d['airport']
         info = AIRPORT_NAMES.get(icao, {})
         full_name = info.get('name', icao)
         airport_hovers.append(f"{full_name} ({icao})")
+
+    # Couleurs des barres: mettre en evidence l'aeroport selectionne
+    bar_colors = []
+    bar_line_widths = []
+    bar_line_colors = []
+    for d in display_data:
+        if airport and d['airport'] == airport:
+            bar_colors.append('rgba(230, 126, 34, 0.85)')
+            bar_line_widths.append(3)
+            bar_line_colors.append('#c0392b')
+        else:
+            bar_colors.append('rgba(52, 152, 219, 0.55)' if airport else 'rgba(52, 152, 219, 0.7)')
+            bar_line_widths.append(0)
+            bar_line_colors.append('rgba(0,0,0,0)')
 
     fig = go.Figure()
 
     # Bar: nombre d'observations
     fig.add_trace(go.Bar(
         x=airport_labels,
-        y=[d['observations'] for d in data],
+        y=[d['observations'] for d in display_data],
         name='Observations',
-        marker_color='rgba(52, 152, 219, 0.7)',
+        marker=dict(
+            color=bar_colors,
+            line=dict(width=bar_line_widths, color=bar_line_colors)
+        ),
         yaxis='y',
-        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Observations: ' + f'{data[i]["observations"]:,}' + '<extra></extra>' for i in range(len(data))]
+        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Observations: ' + f'{display_data[i]["observations"]:,}' + '<extra></extra>' for i in range(len(display_data))]
     ))
 
     # Line: temperature moyenne
     fig.add_trace(go.Scatter(
         x=airport_labels,
-        y=[d['avg_temp'] for d in data],
+        y=[d['avg_temp'] for d in display_data],
         name='Temp moy (°C)',
         mode='lines+markers',
         marker=dict(size=8, color='#e74c3c', symbol='circle'),
         line=dict(width=2, color='#e74c3c'),
         yaxis='y2',
-        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Temp moy: ' + f'{data[i]["avg_temp"]:.1f}°C' + '<extra></extra>' for i in range(len(data))]
+        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Temp moy: ' + f'{display_data[i]["avg_temp"]:.1f}°C' + '<extra></extra>' for i in range(len(display_data))]
     ))
 
     # Line: vitesse vent moyenne
     fig.add_trace(go.Scatter(
         x=airport_labels,
-        y=[d['avg_wind_speed'] for d in data],
+        y=[d['avg_wind_speed'] for d in display_data],
         name='Vent moy (kt)',
         mode='lines+markers',
         marker=dict(size=8, color='#9b59b6', symbol='diamond'),
         line=dict(width=2, color='#9b59b6', dash='dot'),
         yaxis='y2',
-        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Vent moy: ' + f'{data[i]["avg_wind_speed"]:.1f} kt ({data[i]["avg_wind_speed"]*1.852:.0f} km/h)' + '<extra></extra>' for i in range(len(data))]
+        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Vent moy: ' + f'{display_data[i]["avg_wind_speed"]:.1f} kt ({display_data[i]["avg_wind_speed"]*1.852:.0f} km/h)' + '<extra></extra>' for i in range(len(display_data))]
     ))
 
     # Line: visibilite moyenne
     fig.add_trace(go.Scatter(
         x=airport_labels,
-        y=[d['avg_visibility'] for d in data],
+        y=[d['avg_visibility'] for d in display_data],
         name='Visibilite moy (mi)',
         mode='lines+markers',
         marker=dict(size=8, color='#1abc9c', symbol='square'),
         line=dict(width=2, color='#1abc9c', dash='dash'),
         yaxis='y2',
-        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Visibilite moy: ' + f'{data[i]["avg_visibility"]:.1f} mi ({data[i]["avg_visibility"]*1.609:.1f} km)' + '<extra></extra>' for i in range(len(data))]
+        hovertemplate=['<b>' + airport_hovers[i] + '</b><br>Visibilite moy: ' + f'{display_data[i]["avg_visibility"]:.1f} mi ({display_data[i]["avg_visibility"]*1.609:.1f} km)' + '<extra></extra>' for i in range(len(display_data))]
     ))
 
+    title = "Top 20 Aeroports METAR : Observations, Temperature, Vent et Visibilite"
+    if airport:
+        label = get_airport_label(airport)
+        title += f"  |  {label} mis en evidence"
+
     fig.update_layout(
-        title="Top 20 Aeroports METAR : Observations, Temperature, Vent et Visibilite",
+        title=title,
         xaxis_title="Aeroport",
         yaxis=dict(title="Nombre d'observations", side='left'),
         yaxis2=dict(title="Valeurs (°C / kt / mi)", side='right', overlaying='y'),
@@ -982,14 +1144,25 @@ def update_top_airports(n, date_start, date_end):
     Input('interval-meteo', 'n_intervals'),
     Input('meteo-date-start', 'date'),
     Input('meteo-date-end', 'date'),
+    Input('meteo-airport-filter', 'value'),
     prevent_initial_call=False
 )
-def update_airports_table(n, date_start, date_end):
+def update_airports_table(n, date_start, date_end, airport):
     params = build_date_params(date_start, date_end)
     sep = '&' if params else '?'
-    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=15")
+    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=200")
     if not data:
         return html.P("Aucune donnee disponible", className="text-muted text-center")
+
+    # Toujours afficher top 15 (global)
+    display_data = data[:15]
+
+    # Si un aeroport est selectionne et absent du top 15, l'ajouter
+    if airport:
+        if not any(d['airport'] == airport for d in display_data):
+            selected_entry = [d for d in data if d['airport'] == airport]
+            if selected_entry:
+                display_data.append(selected_entry[0])
 
     # Color coding for wind
     def wind_badge(speed):
@@ -1027,18 +1200,26 @@ def update_airports_table(n, date_start, date_end):
             return dbc.Badge(f"{temp:.1f}C", color="danger")
 
     rows = []
-    for i, d in enumerate(data):
+    for i, d in enumerate(display_data):
         icao = d['airport']
         info = AIRPORT_NAMES.get(icao, {})
         full_name = info.get('name', '')
         iata = info.get('iata', '')
         iata_str = f" ({iata})" if iata else ''
-        rows.append(html.Tr([
-            html.Td(html.Strong(str(i + 1))),
+        is_selected = airport and icao == airport
+        row_style = {'backgroundColor': '#fef9e7', 'borderLeft': '4px solid #e67e22'} if is_selected else {}
+        rank_label = str(i + 1)
+        if is_selected and i >= 15:
+            rank_label = "—"
+        row_cells = [
+            html.Td(html.Strong(rank_label)),
             html.Td([
                 html.Div([
-                    html.I(className="fas fa-plane-departure me-1", style={'color': '#3498db'}),
-                    html.Strong(f"{icao}{iata_str}")
+                    html.I(className="fas fa-plane-departure me-1",
+                           style={'color': '#e67e22' if is_selected else '#3498db'}),
+                    html.Strong(f"{icao}{iata_str}"),
+                    dbc.Badge("selectionne", color="warning", className="ms-2",
+                              style={'fontSize': '0.65rem'}) if is_selected else None
                 ]),
                 html.Small(full_name, className="text-muted") if full_name else None
             ]),
@@ -1046,7 +1227,8 @@ def update_airports_table(n, date_start, date_end):
             html.Td(temp_badge(d.get('avg_temp'))),
             html.Td(wind_badge(d.get('avg_wind_speed'))),
             html.Td(vis_badge(d.get('avg_visibility'))),
-        ]))
+        ]
+        rows.append(html.Tr(row_cells, style=row_style))
 
     return [
         dbc.Table([
@@ -1113,8 +1295,9 @@ def update_visibility_distribution(n, date_start, date_end, airport):
             for d in data
         ]
     ))
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Repartition par Plage de Visibilite",
+        title=f"Repartition par Plage de Visibilite{airport_suffix}",
         xaxis_title="Visibilite (statute miles, 1 mi = 1.6 km)",
         yaxis_title="Nombre d'observations",
         template='plotly_white',
@@ -1170,8 +1353,9 @@ def update_visibility_timeline(n, date_start, date_end, airport):
         hovertemplate='<b>%{x}</b><br>Visibilite moy: %{y:.2f} mi<extra></extra>'
     ))
 
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Evolution Visibilite Moyenne Journaliere (avec zones VFR/IFR)",
+        title=f"Evolution Visibilite Moyenne Journaliere{airport_suffix}",
         xaxis_title="Date",
         yaxis_title="Visibilite moyenne (statute miles)",
         template='plotly_white',
@@ -1240,8 +1424,9 @@ def update_temperature_dewpoint(n, date_start, date_end, airport):
             hovertemplate='%{x}<br>Ecart T-Td: %{y:.1f}C<extra></extra>'
         ))
 
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Evolution Temperature, Point de Rosee et Ecart T-Td",
+        title=f"Temperature, Point de Rosee et Ecart T-Td{airport_suffix}",
         xaxis_title="Date",
         yaxis_title="Temperature (\u00b0C)",
         template='plotly_white',
@@ -1302,8 +1487,9 @@ def update_wind_speed(n, date_start, date_end, airport):
             for d in data
         ]
     ))
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Distribution Vitesse du Vent",
+        title=f"Distribution Vitesse du Vent{airport_suffix}",
         xaxis_title="Vitesse (kt = noeuds, 1 kt = 1.852 km/h)",
         yaxis_title="Nombre d'observations",
         template='plotly_white',
@@ -1340,12 +1526,207 @@ def update_observations_timeline(n, date_start, date_end, airport):
         hovertemplate='<b>%{x}</b><br>Observations: %{y:,}<extra></extra>'
     ))
 
+    airport_suffix = f" — {get_airport_label(airport)}" if airport else ""
     fig.update_layout(
-        title="Volume d'Observations METAR par Jour (couverture de la collecte)",
+        title=f"Observations METAR par Jour{airport_suffix}",
         xaxis_title="Date",
         yaxis_title="Nombre d'observations",
         template='plotly_white',
         height=300,
         margin=dict(t=40, b=40)
+    )
+    return fig
+
+
+# --- Callback: Top Visibility by Airport ---
+@callback(
+    Output('meteo-top-visibility', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    Input('meteo-airport-filter', 'value'),
+    prevent_initial_call=False
+)
+def update_top_visibility(n, date_start, date_end, airport):
+    params = build_date_params(date_start, date_end)
+    sep = '&' if params else '?'
+    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=200")
+    if not data:
+        return go.Figure()
+
+    # Toujours global : filtrer les donnees sans visibilite
+    data = [d for d in data if d.get('avg_visibility') is not None]
+    if not data:
+        return go.Figure()
+
+    # Trier par visibilite croissante (pire visibilite en haut)
+    sorted_data = sorted(data, key=lambda x: x.get('avg_visibility', 0))[:20]
+
+    # Si aeroport selectionne est absent du top 20, l'ajouter
+    if airport:
+        if not any(d['airport'] == airport for d in sorted_data):
+            selected_entry = [d for d in data if d['airport'] == airport]
+            if selected_entry:
+                sorted_data.append(selected_entry[0])
+
+    airport_labels = []
+    for d in sorted_data:
+        label = get_airport_short(d['airport']) + f" ({d['airport']})"
+        if airport and d['airport'] == airport:
+            label = ">> " + label + " <<"
+        airport_labels.append(label)
+
+    def vis_color(v, is_selected):
+        if is_selected:
+            return '#e67e22'
+        if v is None:
+            return '#95a5a6'
+        if v < 1:
+            return '#e74c3c'
+        if v < 3:
+            return '#f39c12'
+        if v < 5:
+            return '#f1c40f'
+        if v < 10:
+            return '#3498db'
+        return '#27ae60'
+
+    colors = [vis_color(d.get('avg_visibility'), airport and d['airport'] == airport) for d in sorted_data]
+    line_widths = [3 if (airport and d['airport'] == airport) else 0 for d in sorted_data]
+    line_colors = ['#c0392b' if (airport and d['airport'] == airport) else 'rgba(0,0,0,0)' for d in sorted_data]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=airport_labels,
+        x=[d.get('avg_visibility', 0) for d in sorted_data],
+        orientation='h',
+        marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)),
+        text=[f"{d.get('avg_visibility', 0):.1f} mi" for d in sorted_data],
+        textposition='auto',
+        hovertemplate=[
+            f'<b>{get_airport_label(d["airport"])}</b>'
+            f'{"  ★ SELECTIONNE" if (airport and d["airport"] == airport) else ""}<br>'
+            f'Visibilite moy: {d.get("avg_visibility", 0):.1f} mi '
+            f'({d.get("avg_visibility", 0)*1.609:.1f} km)<br>'
+            f'Observations: {d["observations"]:,}'
+            f'<extra></extra>'
+            for d in sorted_data
+        ]
+    ))
+
+    # Lignes de reference IFR/VFR
+    fig.add_vline(x=1, line_dash="dash", line_color="#e74c3c",
+                  annotation_text="LIFR (1 mi)", annotation_position="top")
+    fig.add_vline(x=3, line_dash="dash", line_color="#f39c12",
+                  annotation_text="IFR (3 mi)", annotation_position="top")
+    fig.add_vline(x=5, line_dash="dash", line_color="#f1c40f",
+                  annotation_text="MVFR (5 mi)", annotation_position="top")
+
+    title = "Classement visibilite la plus faible"
+    if airport:
+        title += f"  |  {get_airport_label(airport)} mis en evidence"
+    fig.update_layout(
+        title=title,
+        xaxis_title="Visibilite moyenne (statute miles)",
+        template='plotly_white',
+        height=500,
+        margin=dict(l=200)
+    )
+    return fig
+
+
+# --- Callback: Top Wind by Airport ---
+@callback(
+    Output('meteo-top-wind', 'figure'),
+    Input('interval-meteo', 'n_intervals'),
+    Input('meteo-date-start', 'date'),
+    Input('meteo-date-end', 'date'),
+    Input('meteo-airport-filter', 'value'),
+    prevent_initial_call=False
+)
+def update_top_wind(n, date_start, date_end, airport):
+    params = build_date_params(date_start, date_end)
+    sep = '&' if params else '?'
+    data = fetch_api(f"/meteo/top-airports{params}{sep}limit=200")
+    if not data:
+        return go.Figure()
+
+    # Toujours global : filtrer les donnees sans vent
+    data = [d for d in data if d.get('avg_wind_speed') is not None]
+    if not data:
+        return go.Figure()
+
+    # Trier par vent decroissant (plus fort en haut)
+    sorted_data = sorted(data, key=lambda x: x.get('avg_wind_speed', 0), reverse=True)[:20]
+
+    # Si aeroport selectionne est absent du top 20, l'ajouter
+    if airport:
+        if not any(d['airport'] == airport for d in sorted_data):
+            selected_entry = [d for d in data if d['airport'] == airport]
+            if selected_entry:
+                sorted_data.append(selected_entry[0])
+
+    airport_labels = []
+    for d in sorted_data:
+        label = get_airport_short(d['airport']) + f" ({d['airport']})"
+        if airport and d['airport'] == airport:
+            label = ">> " + label + " <<"
+        airport_labels.append(label)
+
+    def wind_color(w, is_selected):
+        if is_selected:
+            return '#e67e22'
+        if w is None:
+            return '#95a5a6'
+        if w < 5:
+            return '#27ae60'
+        if w < 10:
+            return '#2ecc71'
+        if w < 15:
+            return '#f39c12'
+        if w < 20:
+            return '#e67e22'
+        if w < 25:
+            return '#e74c3c'
+        return '#c0392b'
+
+    colors = [wind_color(d.get('avg_wind_speed'), airport and d['airport'] == airport) for d in sorted_data]
+    line_widths = [3 if (airport and d['airport'] == airport) else 0 for d in sorted_data]
+    line_colors = ['#c0392b' if (airport and d['airport'] == airport) else 'rgba(0,0,0,0)' for d in sorted_data]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=airport_labels,
+        x=[d.get('avg_wind_speed', 0) for d in sorted_data],
+        orientation='h',
+        marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)),
+        text=[f"{d.get('avg_wind_speed', 0):.1f} kt" for d in sorted_data],
+        textposition='auto',
+        hovertemplate=[
+            f'<b>{get_airport_label(d["airport"])}</b>'
+            f'{"  ★ SELECTIONNE" if (airport and d["airport"] == airport) else ""}<br>'
+            f'Vent moy: {d.get("avg_wind_speed", 0):.1f} kt '
+            f'({d.get("avg_wind_speed", 0)*1.852:.1f} km/h)<br>'
+            f'Observations: {d["observations"]:,}'
+            f'<extra></extra>'
+            for d in sorted_data
+        ]
+    ))
+
+    # Lignes de reference
+    fig.add_vline(x=15, line_dash="dash", line_color="#e67e22",
+                  annotation_text="Brise forte (15 kt)", annotation_position="top")
+    fig.add_vline(x=25, line_dash="dash", line_color="#c0392b",
+                  annotation_text="Vent violent (25 kt)", annotation_position="top")
+
+    title = "Classement vent moyen le plus fort"
+    if airport:
+        title += f"  |  {get_airport_label(airport)} mis en evidence"
+    fig.update_layout(
+        title=title,
+        xaxis_title="Vent moyen (kt, 1 kt = 1.852 km/h)",
+        template='plotly_white',
+        height=500,
+        margin=dict(l=200)
     )
     return fig
