@@ -13,7 +13,7 @@ import os
 dash.register_page(__name__, path='/', name='Synthèse')
 
 API_URL = os.getenv('API_URL', 'http://127.0.0.1:8000')
-DEFAULT_DELAY_THRESHOLD = 10
+DEFAULT_DELAY_THRESHOLD = 15
 
 def fetch_api(endpoint):
     try:
@@ -150,23 +150,8 @@ layout = html.Div([
                     dbc.CardHeader(html.H5("Insights Actionnables", className="mb-0")),
                     dbc.CardBody(id='vols-insights')
                 ], className="shadow-sm border-0")
-            ])
+            ], width=12)
         ], className="mb-4"),
-        
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader(html.H5("Performance Modèle ML", className="mb-0")),
-                    dbc.CardBody([dcc.Graph(id='vols-ml-confusion', config={'displayModeBar': False})])
-                ], className="shadow-sm border-0")
-            ], width=6),
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader(html.H5("Distribution Risque", className="mb-0")),
-                    dbc.CardBody([dcc.Graph(id='vols-ml-risk', config={'displayModeBar': False})])
-                ], className="shadow-sm border-0")
-            ], width=6),
-        ]),
     ], id="vols-content-trigger")
 ])
 
@@ -175,8 +160,6 @@ layout = html.Div([
     Output('vols-daily-chart', 'figure'),
     Output('vols-hourly-chart', 'figure'),
     Output('vols-airlines-chart', 'figure'),
-    Output('vols-ml-confusion', 'figure'),
-    Output('vols-ml-risk', 'figure'),
     Output('vols-insights', 'children'),
     Output('vols-data-info', 'children'),
     Output('loading-output-stats', 'children'),
@@ -225,25 +208,7 @@ def update_all_stats(n_clicks, n_int, delay_threshold, date_start, date_end):
         fig_airlines.add_trace(go.Bar(y=[d.get('airline_name') or d['airline'] for d in airlines_data], x=[d['delay_rate'] for d in airlines_data], orientation='h', marker=dict(color=[d['delay_rate'] for d in airlines_data], colorscale='RdYlGn_r')))
     fig_airlines.update_layout(title="Top 15 Compagnies - Taux Retard", template='plotly_white', height=400, yaxis={'autorange': 'reversed'}, margin=dict(l=20, r=20, t=40, b=20))
 
-    # 5. ML Confusion
-    ml_conf = fetch_api(f"/ml/confusion{params}")
-    fig_conf = go.Figure()
-    if ml_conf:
-        fig_conf.add_trace(go.Heatmap(z=[[ml_conf['tn'], ml_conf['fp']], [ml_conf['fn'], ml_conf['tp']]], x=['Stable', 'Retard'], y=['Stable', 'Retard'], colorscale='RdYlGn_r', showscale=False))
-        fig_conf.update_layout(title=f"Matrice Confusion (Précision: {ml_conf['accuracy']:.1f}%)")
-    fig_conf.update_layout(template='plotly_white', height=350, margin=dict(l=20, r=20, t=40, b=20))
-
-    # 6. ML Risk
-    # Suppression du premier '&' car pas de delay_threshold sur cet endpoint
-    risk_params = params.replace('?delay_threshold=' + str(delay_threshold) + '&', '?', 1).replace('?delay_threshold=' + str(delay_threshold), '?', 1)
-    risk_data = fetch_api(f"/ml/risk-distribution{risk_params}")
-    fig_risk = go.Figure()
-    if risk_data:
-        colors = {'LOW': '#27ae60', 'MEDIUM': '#f39c12', 'HIGH': '#e74c3c'}
-        fig_risk.add_trace(go.Bar(x=[d['delay_risk_level'] for d in risk_data], y=[d['count'] for d in risk_data], marker_color=[colors.get(d['delay_risk_level'], '#95a5a6') for d in risk_data]))
-    fig_risk.update_layout(title="Distribution Risque ML", template='plotly_white', height=350, margin=dict(l=20, r=20, t=40, b=20))
-
-    # 7. Insights
+    # 5. Insights
     insight_content = "Veuillez actualiser les données."
     if stats and hourly_data and airlines_data:
         worst_h = max(hourly_data, key=lambda x: x['delay_rate']) if hourly_data else None
@@ -254,7 +219,7 @@ def update_all_stats(n_clicks, n_int, delay_threshold, date_start, date_end):
         insight_content = html.Ul(insight_items)
     
     info = f"Mis à jour à {datetime.now().strftime('%H:%M:%S')}"
-    return kpi_children, fig_daily, fig_hourly, fig_airlines, fig_conf, fig_risk, insight_content, info, ""
+    return kpi_children, fig_daily, fig_hourly, fig_airlines, insight_content, info, ""
 
 @callback(Output('delay-threshold-display', 'children'), Input('delay-threshold-slider', 'value'))
 def update_threshold_display(value):

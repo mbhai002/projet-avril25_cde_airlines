@@ -43,15 +43,15 @@ layout = html.Div([
                     )
                 ], width=12, lg=4),
                 dbc.Col([
-                    html.Label("Filtres rapides", className="fw-bold mb-2"),
-                    dbc.RadioItems(
-                        id="explorer-quick-filter",
+                    html.Label("Niveaux de Risque", className="fw-bold mb-2"),
+                    dbc.Checklist(
+                        id="explorer-risk-filter",
                         options=[
-                            {"label": "Tous", "value": "all"},
-                            {"label": "Retards", "value": "delayed"},
-                            {"label": "Haut Risque", "value": "high_risk"},
+                            {"label": "Faible", "value": "low"},
+                            {"label": "Modéré", "value": "medium"},
+                            {"label": "Élevé", "value": "high"},
                         ],
-                        value="all",
+                        value=["low", "medium", "high"],
                         inline=True,
                     )
                 ], width=12, lg=4),
@@ -78,21 +78,22 @@ layout = html.Div([
     Input('btn-explorer-refresh', 'n_clicks'),
     Input('explorer-date-range', 'start_date'),
     Input('explorer-date-range', 'end_date'),
-    Input('explorer-quick-filter', 'value'),
+    Input('explorer-risk-filter', 'value'),
     State('explorer-date-range', 'start_date'),
     State('explorer-date-range', 'end_date')
 )
-def update_explorer_table(n_clicks, start, end, q_filter, s_state, e_state):
+def update_explorer_table(n_clicks, start, end, risk_levels, s_state, e_state):
     # Correction: On utilise les dates fournies
     date_start = start or datetime.now().strftime('%Y-%m-%d')
     date_end = end or datetime.now().strftime('%Y-%m-%d')
     
     params = [f"date_start={date_start}", f"date_end={date_end}"]
     
-    if q_filter == 'delayed':
-        params.append("min_delay=15")
-    elif q_filter == 'high_risk':
-        params.append("risk_level=high")
+    if risk_levels:
+        params.append(f"risk_levels={','.join(risk_levels)}")
+    else:
+        # Si rien n'est coché, on force un filtre vide pour ne rien afficher (ou tout afficher selon l'envie, ici cohérence avec l'API)
+        params.append("risk_levels=none")
     
     flights = fetch_api(f"/search-flights?{'&'.join(params)}")
     
