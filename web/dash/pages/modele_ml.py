@@ -135,8 +135,8 @@ def layout():
                         ], className="table table-bordered mt-4"),
                         html.Div([
                             html.P([html.B(f"Vrais Négatifs - {get_pct(cm[0][0])}: "), "Le modèle a correctement prédit l'absence de retard."], className="small mb-1"),
-                            html.P([html.B(f"Faux Positifs - {get_pct(cm[0][1])}: "), "Alertes inutiles (le vol était à l'heure alors qu'on prédisait un retard)."], className="small mb-1"),
-                            html.P([html.B(f"Faux Négatifs - {get_pct(cm[1][0])}: "), "Retards non détectés (le cas le plus problématique pour l'exploitation)."], className="small mb-1"),
+                            html.P([html.B(f"Faux Positifs - {get_pct(cm[0][1])}: "), "Le vol était à l'heure alors qu'on prédisait un retard."], className="small mb-1"),
+                            html.P([html.B(f"Faux Négatifs - {get_pct(cm[1][0])}: "), "Retards non détectés."], className="small mb-1"),
                             html.P([html.B(f"Vrais Positifs - {get_pct(cm[1][1])}: "), "Le modèle a anticipé avec succès le retard du vol."], className="small mb-0")
                         ], className="mt-3 p-2 bg-light border rounded")
                     ])
@@ -165,8 +165,8 @@ def layout():
                                 html.Tr([
                                     html.Td(risk_mapping.get(r['risk_level'], r['risk_level']), className="fw-bold"),
                                     html.Td(f"{r['total_vols']:,}", className="text-center"),
-                                    html.Td(f"{r['vrais_retards']:,}", className="text-center text-danger"),
-                                    html.Td(f"{r['vols_a_l_heure']:,}", className="text-center text-success"),
+                                    html.Td(f"{r['vrais_retards']:,}", className="text-center"),
+                                    html.Td(f"{r['vols_a_l_heure']:,}", className="text-center"),
                                     html.Td(f"{r['taux_retard_reel']}%", className="text-center fw-bold bg-light")
                                 ]) for r in (reliability_data or [])
                             ])
@@ -180,15 +180,15 @@ def layout():
         dbc.Row([
             dbc.Col([
                 dbc.Card([
-                    dbc.CardHeader([html.I(className="fas fa-exclamation-triangle me-2 text-danger"), "Analyse des Limites & Plafond de Performance"]),
+                    dbc.CardHeader([html.I(className="fas fa-chart-line me-2 text-primary"), "Analyse de la Performance & Marges de Progression"]),
                     dbc.CardBody([
                         dbc.Row([
                             dbc.Col([
-                                html.H5("Diagnostic : " + metrics['overfitting_analysis']['overfitting_status'], className="text-danger fw-bold"),
+                                html.H5("Diagnostic : Information sur la généralisation", className="text-primary fw-bold"),
                                 html.P([
-                                    "Le modèle présente un ", html.B("surapprentissage (overfitting) significatif"), 
+                                    "Le modèle présente un ", html.B("phénomène de surapprentissage"), 
                                     " (Gap ROC AUC : ", 
-                                    html.Span(f"{metrics['overfitting_analysis']['roc_auc_gap_percent']:.1f}%", className="badge bg-danger"),
+                                    f"{metrics['overfitting_analysis']['roc_auc_gap_percent']:.1f}%",
                                     ")."
                                 ]),
                                 

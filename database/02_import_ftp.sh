@@ -69,10 +69,14 @@ echo "Loading TAF data..."
 psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.taf FROM '$TAF_CSV' WITH (FORMAT csv, HEADER true)"
 
 echo "Loading Sky Conditions data..."
+psql -U "$PGUSER" -d "$PGDATABASE" -c "ALTER TABLE public.sky_condition DISABLE TRIGGER ALL;"
 psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.sky_condition FROM '$SKY_COND_CSV' WITH (FORMAT csv, HEADER true)"
+psql -U "$PGUSER" -d "$PGDATABASE" -c "ALTER TABLE public.sky_condition ENABLE TRIGGER ALL;"
 
 echo "Loading flight data..."
+psql -U "$PGUSER" -d "$PGDATABASE" -c "ALTER TABLE public.flight DISABLE TRIGGER ALL;"
 psql -U "$PGUSER" -d "$PGDATABASE" -c "\copy public.flight FROM '$FLIGHT_CSV' WITH (FORMAT csv, HEADER true)"
+psql -U "$PGUSER" -d "$PGDATABASE" -c "ALTER TABLE public.flight ENABLE TRIGGER ALL;"
 
 echo "Cleaning up temporary files..."
 rm -f "$REFS_SQL" "$METAR_CSV" "$TAF_CSV" "$SKY_COND_CSV" "$FLIGHT_CSV"
